@@ -1,8 +1,6 @@
 {
     "num_blocks": 100,
     "speed_scale": 2.0,
-    "block_radius": 5.0,
-    "bond_length": 10.0,
     "hydrolysis_interval": 60,
     "molec_mobility_penalty": 0.02,
     "history_interval": 30,

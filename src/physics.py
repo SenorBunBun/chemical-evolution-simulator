@@ -89,7 +89,7 @@ def _move_molecule(state: SimulationState, molecule, sim_width: float):
 
 def _wall_bounce_block(block, config, gfx, sim_width: float):
     """Bounce a free block off walls."""
-    r = config.block_radius
+    r = gfx.block_radius
     h = gfx.window_height
 
     if block.position.x < r:
@@ -110,7 +110,7 @@ def _wall_bounce_block(block, config, gfx, sim_width: float):
 def _wall_bounce_molecule(molecule, state: SimulationState, sim_width: float):
     """Bounce a molecule off walls, checking all constituent blocks."""
     config = state.config
-    r = config.block_radius
+    r = state.gfx.block_radius
     h = state.gfx.window_height
     anchor = state.blocks[molecule.anchor_block_id]
 
@@ -144,7 +144,7 @@ def update_spatial_hash(state: SimulationState, spatial_hash: SpatialHash):
 def detect_collisions(state: SimulationState, spatial_hash: SpatialHash) -> list[tuple[int, int]]:
     """Find all colliding block pairs from different rigid groups."""
     collisions = []
-    bond_length = state.config.bond_length
+    bond_length = state.gfx.bond_length
 
     for block_id, block in state.blocks.items():
         nearby = spatial_hash.query_nearby(block.position)
@@ -199,8 +199,8 @@ def deflect(state: SimulationState, a_id: int, b_id: int):
 
     # Separate overlapping entities
     dist = a.position.distance_to(b.position)
-    if dist < state.config.bond_length:
-        overlap = state.config.bond_length - dist
+    if dist < state.gfx.bond_length:
+        overlap = state.gfx.bond_length - dist
         sep = normal * (overlap / 2 + 0.5)
         shift_entity(state, a_id, -sep)
         shift_entity(state, b_id, sep)

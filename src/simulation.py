@@ -46,7 +46,7 @@ def _random_direction() -> Vector2:
 
 def _init_random(state: SimulationState, config: SimConfig, id_gen: IdGen, sim_width: float):
     """Generate blocks with normally-distributed random properties."""
-    margin = config.block_radius * 2
+    margin = state.gfx.block_radius * 2
 
     for _ in range(config.num_blocks):
         mobility = _sample_clamped_normal(config.mobility_mean, config.mobility_std)
@@ -131,7 +131,7 @@ def _build_scenario_molecule(
             direction = direction.normalize()
         else:
             direction = Vector2(1, 0)
-        curr_block.position = Vector2(prev_block.position) + direction * config.bond_length
+        curr_block.position = Vector2(prev_block.position) + direction * state.gfx.bond_length
 
     # Create bonds between consecutive blocks
     for i in range(len(block_ids) - 1):

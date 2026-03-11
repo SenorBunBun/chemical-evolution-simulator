@@ -89,11 +89,11 @@ def _create_molecule_from_pair(state: SimulationState, a_id: int, b_id: int, id_
         direction = Vector2(1, 0)
 
     # Snap B to exact bond_length from A
-    b.position = Vector2(a.position) + direction * config.bond_length
+    b.position = Vector2(a.position) + direction * state.gfx.bond_length
 
     offsets = {
         a_id: Vector2(0, 0),
-        b_id: Vector2(direction * config.bond_length),
+        b_id: Vector2(direction * state.gfx.bond_length),
     }
 
     # Velocity: weighted average (both weight 1), rescaled
@@ -135,7 +135,7 @@ def _add_block_to_molecule(state: SimulationState, free_id: int, mol_id: int, bo
         direction = Vector2(1, 0)
 
     # Free block's offset = bonded block's offset + direction * bond_length
-    free_offset = Vector2(molecule.offsets[bonded_to_id]) + direction * config.bond_length
+    free_offset = Vector2(molecule.offsets[bonded_to_id]) + direction * state.gfx.bond_length
 
     # Snap free block position
     free_block.position = Vector2(anchor.position) + free_offset
@@ -193,7 +193,7 @@ def _merge_molecules(
     # new_offset = base.offsets[connect_a] + direction * bond_length + (absorbed.offsets[block] - absorbed.offsets[connect_b])
     connect_a_offset = base.offsets[connect_a_id]
     connect_b_offset = absorbed.offsets[connect_b_id]
-    bridge = connect_a_offset + direction * config.bond_length
+    bridge = connect_a_offset + direction * state.gfx.bond_length
 
     for bid in absorbed.block_ids:
         new_offset = bridge + (absorbed.offsets[bid] - connect_b_offset)

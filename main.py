@@ -62,7 +62,7 @@ def main():
     id_gen = IdGen()
     state = create_initial_state(sim_config, gfx_config, id_gen)
     renderer = Renderer(sim_config, gfx_config)
-    spatial_hash = SpatialHash(sim_config.bond_length)
+    spatial_hash = SpatialHash(gfx_config.bond_length)
     clock = pygame.time.Clock()
 
     print(f"Simulation started: {len(state.blocks)} blocks")
@@ -79,7 +79,7 @@ def main():
         if getattr(state, "_reset_requested", False):
             id_gen = IdGen()
             state = create_initial_state(sim_config, gfx_config, id_gen)
-            spatial_hash = SpatialHash(sim_config.bond_length)
+            spatial_hash = SpatialHash(gfx_config.bond_length)
             print("Simulation reset")
             continue
 

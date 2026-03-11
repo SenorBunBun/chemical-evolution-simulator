@@ -11,8 +11,6 @@ class SimConfig:
 
     num_blocks: int = 50
     speed_scale: float = 2.0
-    block_radius: float = 8.0
-    bond_length: float = 16.0
     hydrolysis_interval: int = 60
     molec_mobility_penalty: float = 0.02
     history_interval: int = 30
@@ -54,15 +52,25 @@ class GfxConfig:
     window_width: int = 1200
     window_height: int = 800
     target_fps: int = 60
-    bg_color: list[int] = field(default_factory=lambda: [26, 26, 26])
+    bg_color: list[int] = field(default_factory=lambda: [255, 255, 255])
+    block_radius: float = 8.0
+    bond_length: float = 16.0
 
     # Which block property to color by:
     #   "formation_reactivity", "mobility", "breaking_reactivity",
     #   "latent_catalytic_potential", "h_bond_type"
     block_color_by: str = "formation_reactivity"
 
+    # Configurable block color scale: low value -> high value
+    block_color_low: list[int] = field(default_factory=lambda: [0, 0, 255])    # blue (inert)
+    block_color_high: list[int] = field(default_factory=lambda: [255, 0, 0])   # red (active)
+
+    # Configurable bond color scale: strong (low break prob) -> fragile (high break prob)
+    bond_color_strong: list[int] = field(default_factory=lambda: [0, 0, 0])        # black
+    bond_color_fragile: list[int] = field(default_factory=lambda: [180, 180, 180]) # gray
+
     bond_width: int = 3
-    block_outline: bool = True  # white outline on blocks in molecules
+    block_outline: bool = True  # outline on blocks in molecules
 
 
 def _load_json_filtered(cls, path: str) -> dict:

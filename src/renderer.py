@@ -19,29 +19,16 @@ COLOR_BY_INFO = {
 }
 
 
-def _value_to_color(value: float) -> tuple[int, int, int]:
-    """Map [0, 1] to blue(0) -> green(0.5) -> red(1) via HSV."""
-    hue = (1.0 - value) * 240
-    color = pygame.Color(0)
-    color.hsva = (hue % 360, 100, 100, 100)
-    return (color.r, color.g, color.b)
-
-
-def _bond_strength_color(break_prob: float) -> tuple[int, int, int]:
-    """Map bond break probability [0, 1] to green(strong) -> red(fragile)."""
-    hue = (1.0 - break_prob) * 120
-    color = pygame.Color(0)
-    color.hsva = (hue % 360, 100, 100, 100)
-    return (color.r, color.g, color.b)
-
-
-def _get_block_color_value(block, color_by: str) -> tuple[int, int, int]:
-    """Get the color for a block based on the configured color_by property."""
-    if color_by == "h_bond_type":
-        # Discrete: donor = blue, acceptor = red
-        return (80, 130, 255) if block.h_bond_type.value == "donor" else (255, 80, 80)
-    value = getattr(block, color_by, 0.5)
-    return _value_to_color(value)
+def _make_lerp_color_fn(low: tuple, high: tuple):
+    """Create a color function that linearly interpolates between low and high."""
+    def fn(value: float) -> tuple[int, int, int]:
+        t = max(0.0, min(1.0, value))
+        return (
+            int(low[0] + (high[0] - low[0]) * t),
+            int(low[1] + (high[1] - low[1]) * t),
+            int(low[2] + (high[2] - low[2]) * t),
+        )
+    return fn
 
 
 class Renderer:
@@ -49,8 +36,8 @@ class Renderer:
     LEGEND_BG = (36, 36, 36)
     TEXT_COLOR = (220, 220, 220)
     DIM_TEXT = (140, 140, 140)
-    GRID_COLOR = (50, 50, 50)
-    MOL_OUTLINE = (255, 255, 255)
+    GRID_COLOR = (200, 200, 200)
+    MOL_OUTLINE = (0, 0, 0)
 
     def __init__(self, sim_config: SimConfig, gfx: GfxConfig):
         pygame.init()
@@ -62,6 +49,12 @@ class Renderer:
         self.sim_width = gfx.window_width - self.LEGEND_WIDTH
         self.sim_config = sim_config
         self.gfx = gfx
+        self._block_color_fn = _make_lerp_color_fn(
+            tuple(gfx.block_color_low), tuple(gfx.block_color_high)
+        )
+        self._bond_color_fn = _make_lerp_color_fn(
+            tuple(gfx.bond_color_strong), tuple(gfx.bond_color_fragile)
+        )
         self.debug_mode = False
         self._stepping = False
 
@@ -114,7 +107,7 @@ class Renderer:
         pygame.display.flip()
 
     def _draw_blocks(self, state: SimulationState):
-        r = int(self.sim_config.block_radius)
+        r = int(self.gfx.block_radius)
         color_by = self.gfx.block_color_by
 
         for block in state.blocks.values():
@@ -122,7 +115,7 @@ class Renderer:
             if x < 0 or x > self.sim_width or y < 0 or y > self.gfx.window_height:
                 continue
 
-            color = _get_block_color_value(block, color_by)
+            color = self._get_block_color(block, color_by)
             pygame.draw.circle(self.screen, color, (x, y), r)
 
             if self.gfx.block_outline and block.molecule_id is not None:
@@ -138,7 +131,7 @@ class Renderer:
                 width = 1
             else:
                 break_prob = (a.breaking_reactivity + b.breaking_reactivity) / 2
-                color = _bond_strength_color(break_prob)
+                color = self._bond_color_fn(break_prob)
                 width = self.gfx.bond_width
 
             start = (int(a.position.x), int(a.position.y))
@@ -175,7 +168,7 @@ class Renderer:
         else:
             y = self._draw_gradient_bar(
                 panel_x + margin, y, panel_w - 2 * margin,
-                info[0], _value_to_color,
+                info[0], self._block_color_fn,
                 f"0.0 ({info[1]})", f"1.0 ({info[2]})",
             )
         y += 20
@@ -183,7 +176,7 @@ class Renderer:
         # Bond strength gradient
         y = self._draw_gradient_bar(
             panel_x + margin, y, panel_w - 2 * margin,
-            "Bond Strength", _bond_strength_color,
+            "Bond Strength", self._bond_color_fn,
             "0.0 (strong)", "1.0 (fragile)",
         )
         y += 30
@@ -289,7 +282,7 @@ class Renderer:
         return y + 5
 
     def _draw_debug(self, state: SimulationState):
-        cell = self.sim_config.bond_length
+        cell = self.gfx.bond_length
         for gx in range(0, self.sim_width, int(cell)):
             pygame.draw.line(self.screen, self.GRID_COLOR,
                              (gx, 0), (gx, self.gfx.window_height), 1)
@@ -316,11 +309,18 @@ class Renderer:
                 pygame.draw.line(self.screen, (100, 255, 100),
                                  (x, y), (int(end.x), int(end.y)), 1)
 
+    def _get_block_color(self, block, color_by: str) -> tuple[int, int, int]:
+        """Get the color for a block based on the configured color_by property."""
+        if color_by == "h_bond_type":
+            return (80, 130, 255) if block.h_bond_type.value == "donor" else (255, 80, 80)
+        value = getattr(block, color_by, 0.5)
+        return self._block_color_fn(value)
+
     def _inspect_click(self, state: SimulationState, pos: tuple[int, int]):
         click = Vector2(pos[0], pos[1])
 
         for block in state.blocks.values():
-            if block.position.distance_to(click) < self.sim_config.block_radius * 2:
+            if block.position.distance_to(click) < self.gfx.block_radius * 2:
                 print(f"\n=== Block {block.id} ===")
                 print(f"  Position: ({block.position.x:.1f}, {block.position.y:.1f})")
                 print(f"  Velocity: ({block.velocity.x:.2f}, {block.velocity.y:.2f})")
