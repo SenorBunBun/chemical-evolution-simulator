@@ -1,0 +1,22 @@
+{
+    "scenario_blocks": [
+        {
+            "position": [200, 300],
+            "velocity": [3.0, 0.0],
+            "mobility": 0.8,
+            "formation_reactivity": 0.9,
+            "breaking_reactivity": 0.0,
+            "h_bond_type": "donor",
+            "latent_catalytic_potential": 0.5
+        },
+        {
+            "position": [600, 300],
+            "velocity": [-3.0, 0.0],
+            "mobility": 0.5,
+            "formation_reactivity": 0.9,
+            "breaking_reactivity": 0.0,
+            "h_bond_type": "acceptor",
+            "latent_catalytic_potential": 0.3
+        }
+    ]
+}

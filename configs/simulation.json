@@ -1,0 +1,18 @@
+{
+    "num_blocks": 50,
+    "speed_scale": 2.0,
+    "block_radius": 8.0,
+    "bond_length": 16.0,
+    "hydrolysis_interval": 60,
+    "molec_mobility_penalty": 0.02,
+    "history_interval": 30,
+
+    "mobility_mean": 0.5,
+    "mobility_std": 0.15,
+    "formation_reactivity_mean": 0.5,
+    "formation_reactivity_std": 0.15,
+    "breaking_reactivity_mean": 0.25,
+    "breaking_reactivity_std": 0.10,
+    "latent_catalytic_mean": 0.5,
+    "latent_catalytic_std": 0.20
+}

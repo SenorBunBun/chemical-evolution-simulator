@@ -1,0 +1,67 @@
+{
+    "window_width": 800,
+    "window_height": 600,
+    "scenario_blocks": [
+        {
+            "position": [
+                100,
+                300
+            ],
+            "mobility": 0.5,
+            "formation_reactivity": 0.8,
+            "breaking_reactivity": 0.1,
+            "h_bond_type": "donor",
+            "latent_catalytic_potential": 0.5
+        },
+        {
+            "position": [
+                116,
+                300
+            ],
+            "mobility": 0.5,
+            "formation_reactivity": 0.6,
+            "breaking_reactivity": 0.2,
+            "h_bond_type": "acceptor",
+            "latent_catalytic_potential": 0.3
+        },
+        {
+            "position": [
+                132,
+                300
+            ],
+            "mobility": 0.4,
+            "formation_reactivity": 0.7,
+            "breaking_reactivity": 0.15,
+            "h_bond_type": "donor",
+            "latent_catalytic_potential": 0.4
+        },
+        {
+            "position": [
+                500,
+                300
+            ],
+            "velocity": [
+                -2,
+                0
+            ],
+            "mobility": 0.6,
+            "formation_reactivity": 0.9,
+            "breaking_reactivity": 0.05,
+            "h_bond_type": "acceptor",
+            "latent_catalytic_potential": 0.2
+        }
+    ],
+    "scenario_molecules": [
+        {
+            "block_indices": [
+                0,
+                1,
+                2
+            ],
+            "velocity": [
+                2.0,
+                0.0
+            ]
+        }
+    ]
+}

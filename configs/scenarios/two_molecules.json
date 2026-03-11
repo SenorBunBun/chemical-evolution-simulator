@@ -1,0 +1,15 @@
+{
+    "scenario_blocks": [
+        {"position": [150, 300], "mobility": 0.1, "formation_reactivity": 0.5, "breaking_reactivity": 0.0, "h_bond_type": "donor", "latent_catalytic_potential": 0.5},
+        {"position": [166, 300], "mobility": 0.1, "formation_reactivity": 0.5, "breaking_reactivity": 0.0, "h_bond_type": "acceptor", "latent_catalytic_potential": 0.3},
+        {"position": [182, 300], "mobility": 0.1, "formation_reactivity": 1, "breaking_reactivity": 0.3, "h_bond_type": "donor", "latent_catalytic_potential": 0.4},
+
+        {"position": [618, 300], "mobility": 0.5, "formation_reactivity": 1, "breaking_reactivity": 0.0, "h_bond_type": "acceptor", "latent_catalytic_potential": 0.4},
+        {"position": [634, 300], "mobility": 0.5, "formation_reactivity": 0.5, "breaking_reactivity": 0.0, "h_bond_type": "donor", "latent_catalytic_potential": 0.3},
+        {"position": [650, 300], "mobility": 0.5, "formation_reactivity": 0, "breaking_reactivity": 0.0, "h_bond_type": "acceptor", "latent_catalytic_potential": 0.5}
+    ],
+    "scenario_molecules": [
+        {"block_indices": [0, 1, 2], "velocity": [2.0, 0.0]},
+        {"block_indices": [3, 4, 5], "velocity": [-2.0, 0.0]}
+    ]
+}

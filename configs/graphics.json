@@ -1,0 +1,9 @@
+{
+    "window_width": 1200,
+    "window_height": 800,
+    "target_fps": 60,
+    "bg_color": [26, 26, 26],
+    "block_color_by": "formation_reactivity",
+    "bond_width": 3,
+    "block_outline": true
+}
