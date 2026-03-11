@@ -1,14 +1,15 @@
 """Molecular Evolution Simulator - Entry Point.
 
 Usage:
-    python main.py                                          # All defaults
-    python main.py configs/scenarios/two_molecules.json     # Scenario (sim config)
-    python main.py --gfx configs/graphics.json              # Custom graphics
-    python main.py configs/simulation.json --gfx configs/graphics.json --verbose
+    python main.py                                          # Uses default configs
+    python main.py configs/scenarios/two_molecules.json     # Scenario (overrides sim config)
+    python main.py --gfx configs/graphics_default.json      # Custom graphics
+    python main.py configs/simulation_default.json --verbose
 """
 from __future__ import annotations
 
 import logging
+import os
 import sys
 
 import pygame
@@ -18,6 +19,9 @@ from src.id_gen import IdGen
 from src.physics import SpatialHash
 from src.renderer import Renderer
 from src.simulation import create_initial_state, step
+
+DEFAULT_SIM = "configs/simulation_default.json"
+DEFAULT_GFX = "configs/graphics_default.json"
 
 
 def main():
@@ -37,12 +41,22 @@ def main():
             sim_path = args[i]
         i += 1
 
+    if gfx_path is None and os.path.exists(DEFAULT_GFX):
+        gfx_path = DEFAULT_GFX
+
     if verbose:
         logging.basicConfig(level=logging.DEBUG, format="%(message)s")
     else:
         logging.basicConfig(level=logging.WARNING)
 
-    sim_config = load_sim_config(sim_path)
+    # Load configs: scenarios overlay on top of defaults
+    default_sim = DEFAULT_SIM if os.path.exists(DEFAULT_SIM) else None
+    if sim_path is None:
+        sim_config = load_sim_config(default_sim)
+    elif default_sim and sim_path != default_sim:
+        sim_config = load_sim_config(sim_path, base_path=default_sim)
+    else:
+        sim_config = load_sim_config(sim_path)
     gfx_config = load_gfx_config(gfx_path)
 
     id_gen = IdGen()

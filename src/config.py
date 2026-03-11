@@ -65,20 +65,27 @@ class GfxConfig:
     block_outline: bool = True  # white outline on blocks in molecules
 
 
-def _load_dataclass(cls, path: Optional[str]):
-    """Load a dataclass from JSON, filtering unknown keys."""
-    if path is None:
-        return cls()
+def _load_json_filtered(cls, path: str) -> dict:
+    """Load JSON and filter to only valid fields for the dataclass."""
     with open(path) as f:
         data = json.load(f)
     valid = {f.name for f in cls.__dataclass_fields__.values()}
-    data = {k: v for k, v in data.items() if k in valid}
-    return cls(**data)
+    return {k: v for k, v in data.items() if k in valid}
 
 
-def load_sim_config(path: Optional[str] = None) -> SimConfig:
-    return _load_dataclass(SimConfig, path)
+def load_sim_config(path: Optional[str] = None, base_path: Optional[str] = None) -> SimConfig:
+    """Load sim config. If base_path given, load defaults from it first, then overlay path on top."""
+    if base_path is not None and path is not None:
+        base = _load_json_filtered(SimConfig, base_path)
+        overlay = _load_json_filtered(SimConfig, path)
+        base.update(overlay)
+        return SimConfig(**base)
+    if path is not None:
+        return SimConfig(**_load_json_filtered(SimConfig, path))
+    return SimConfig()
 
 
 def load_gfx_config(path: Optional[str] = None) -> GfxConfig:
-    return _load_dataclass(GfxConfig, path)
+    if path is not None:
+        return GfxConfig(**_load_json_filtered(GfxConfig, path))
+    return GfxConfig()
