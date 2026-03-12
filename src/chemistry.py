@@ -442,7 +442,13 @@ def _check_assembly_connectivity(state: SimulationState, assembly_id: int):
         f"split into {len(components)} groups: {[len(c) for c in components]}"
     )
 
-    # Dissolve the original assembly first (frees all molecules)
+    # Save H-bonds before dissolving (dissolve deletes them from state.bonds)
+    saved_hbonds = {}
+    for hb_id in asm.h_bond_ids:
+        if hb_id in state.bonds:
+            saved_hbonds[hb_id] = state.bonds[hb_id]
+
+    # Dissolve the original assembly (frees all molecules, removes H-bonds)
     _dissolve_assembly(state, assembly_id)
 
     # Re-form assemblies for groups with >= 2 molecules
@@ -452,17 +458,16 @@ def _check_assembly_connectivity(state: SimulationState, assembly_id: int):
             continue
 
         mol_list = list(component)
-        # Collect H-bonds that connect molecules in this component
+        # Restore H-bonds that connect molecules in this component
         comp_hbonds = []
-        for bond_id, bond in list(state.bonds.items()):
-            if not bond.is_h_bond:
-                continue
+        for hb_id, bond in saved_hbonds.items():
             a_block = state.blocks.get(bond.block_a_id)
             b_block = state.blocks.get(bond.block_b_id)
             if not a_block or not b_block:
                 continue
             if a_block.molecule_id in component and b_block.molecule_id in component:
-                comp_hbonds.append(bond_id)
+                state.bonds[hb_id] = bond  # re-add to state
+                comp_hbonds.append(hb_id)
 
         if not comp_hbonds:
             # No H-bonds left — just leave them free
