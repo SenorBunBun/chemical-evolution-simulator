@@ -5,12 +5,15 @@
     "bg_color": [255, 255, 255],
     "block_radius": 4.0,
     "bond_length": 8.0,
-    "block_color_by": "formation_reactivity",
+    "block_color_by": "latent_catalytic_potential",
     "block_color_low": [0, 0, 255],
     "block_color_high": [255, 0, 0],
     "bond_color_strong": [255, 255, 255],
     "bond_color_fragile": [80, 80, 80],
     "bond_width": 3,
     "h_bond_width": 3,
-    "block_outline": true
+    "block_outline": true,
+
+    "catalysis_range_color": [0, 200, 0],
+    "catalysis_range_alpha": 30
 }

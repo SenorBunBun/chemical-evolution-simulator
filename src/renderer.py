@@ -97,6 +97,9 @@ class Renderer:
         """Render one frame: simulation area + legend panel."""
         self.screen.fill(tuple(self.gfx.bg_color))
 
+        # Catalyst zones first (underneath everything)
+        self._draw_catalyst_zones(state)
+
         # Blocks first, bonds on top so they're visible when blocks touch
         self._draw_blocks(state)
         self._draw_bonds(state)
@@ -106,6 +109,54 @@ class Renderer:
 
         self._draw_legend(state)
         pygame.display.flip()
+
+    def _get_assembly_block_positions(self, asm, state: SimulationState) -> list[tuple[int, int]]:
+        """Get all block positions in an assembly."""
+        positions = []
+        for mid in asm.molecule_ids:
+            for bid in state.molecules[mid].block_ids:
+                b = state.blocks[bid]
+                positions.append((int(b.position.x), int(b.position.y)))
+        return positions
+
+    def _draw_catalyst_zones(self, state: SimulationState):
+        """Draw semi-transparent zone extending from the assembly shape + catalysis_range padding."""
+        catalytic = [a for a in state.assemblies.values() if a.is_catalytic]
+        if not catalytic:
+            return
+
+        padding = int(self.sim_config.catalysis_range)
+        color = tuple(self.gfx.catalysis_range_color)
+        alpha = self.gfx.catalysis_range_alpha
+
+        for asm in catalytic:
+            block_positions = self._get_assembly_block_positions(asm, state)
+            if not block_positions:
+                continue
+
+            # Bounding box for the zone
+            min_x = min(p[0] for p in block_positions) - padding
+            min_y = min(p[1] for p in block_positions) - padding
+            max_x = max(p[0] for p in block_positions) + padding
+            max_y = max(p[1] for p in block_positions) + padding
+
+            if max_x < 0 or min_x > self.sim_width or max_y < 0 or min_y > self.gfx.window_height:
+                continue
+
+            w = max_x - min_x
+            h = max_y - min_y
+
+            # Draw all circles opaque on one surface, then blit with uniform alpha
+            surf = pygame.Surface((w, h))
+            colorkey = (1, 1, 1)  # transparent background
+            surf.fill(colorkey)
+            surf.set_colorkey(colorkey)
+            surf.set_alpha(alpha)
+
+            for bx, by in block_positions:
+                pygame.draw.circle(surf, color, (bx - min_x, by - min_y), padding)
+
+            self.screen.blit(surf, (min_x, min_y))
 
     def _draw_blocks(self, state: SimulationState):
         r = int(self.gfx.block_radius)
@@ -198,6 +249,16 @@ class Renderer:
         self.screen.blit(asm_label, (panel_x + margin, y))
         asm_x = panel_x + margin + 72
         pygame.draw.circle(self.screen, self.ASM_OUTLINE, (asm_x + 8, y + 8), 8, 2)
+        y += 20
+
+        # Catalytic assembly swatch
+        cat_color = tuple(self.gfx.catalysis_range_color)
+        cat_label = self.font.render("Catalytic", True, self.TEXT_COLOR)
+        self.screen.blit(cat_label, (panel_x + margin, y))
+        cat_x = panel_x + margin + 72
+        pygame.draw.circle(self.screen, cat_color, (cat_x + 8, y + 8), 8, 2)
+        # Small range indicator
+        pygame.draw.circle(self.screen, cat_color, (cat_x + 8, y + 8), 12, 1)
         y += 25
 
         # Divider
@@ -254,6 +315,8 @@ class Renderer:
             stats.append("Avg N (formed): -")
 
         stats.append(f"Assemblies: {len(state.assemblies)}")
+        num_catalytic = sum(1 for a in state.assemblies.values() if a.is_catalytic)
+        stats.append(f"Catalysts: {num_catalytic}")
 
         # Avg M: average molecules per assembly
         if state.assemblies:

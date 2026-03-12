@@ -9,7 +9,7 @@
     "mobility_std": 0.15,
     "formation_reactivity_mean": 0.5,
     "formation_reactivity_std": 0.25,
-    "breaking_reactivity_mean": 0.15,
+    "breaking_reactivity_mean": 0.25,
     "breaking_reactivity_std": 0.10,
     "latent_catalytic_mean": 0.5,
     "latent_catalytic_std": 0.20,
@@ -22,9 +22,10 @@
     "min_assembly_n": 5,
 
     "base_catalysis_chance": 0.1,
-    "catalysis_range": 100.0,
+    "catalysis_range": 30.0,
     "catalysis_interval": 60,
-    "base_generation_chance": 0.05,
+    "base_generation_chance": 0.01,
+    "_comment_for_base_gen_original_val": 0.005,
     "base_reactivity_bonus": 0.02,
     "catalysis_m_bonus": 1.0
 }

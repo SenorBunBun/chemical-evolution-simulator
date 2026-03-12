@@ -75,6 +75,10 @@ class GfxConfig:
     h_bond_width: int = 1
     block_outline: bool = True  # outline on blocks in molecules
 
+    # Phase 3: Catalysis rendering
+    catalysis_range_color: list[int] = field(default_factory=lambda: [0, 200, 0])  # green
+    catalysis_range_alpha: int = 30  # transparency for range circle fill
+
 
 def _load_json_filtered(cls, path: str) -> dict:
     """Load JSON and filter to only valid fields for the dataclass."""

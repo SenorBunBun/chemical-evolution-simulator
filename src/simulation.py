@@ -218,6 +218,7 @@ def _build_scenario_assembly(
         anchor_molecule_id=anchor_mol_id,
         offsets=asm_offsets,
         velocity=vel,
+        is_catalytic=asm_spec.get("is_catalytic", False),
     )
 
     state.assemblies[asm.id] = asm
@@ -246,6 +247,9 @@ def step(state: SimulationState, spatial_hash: SpatialHash, id_gen: IdGen):
 
     if state.tick > 0 and state.tick % state.config.hydrolysis_interval == 0:
         chemistry.hydrolysis_step(state, id_gen)
+
+    if state.tick > 0 and state.tick % state.config.catalysis_interval == 0:
+        chemistry.catalysis_step(state, id_gen)
 
     state.tick += 1
 

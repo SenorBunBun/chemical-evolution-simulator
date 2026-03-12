@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import logging
+import math
 import random
 
 from pygame.math import Vector2
 
 from src.entities import (
-    Assembly, Bond, Molecule, SimulationState,
+    Assembly, Bond, BuildingBlock, HBondType, Molecule, SimulationState,
     can_bond, get_entity_velocity,
 )
 from src.id_gen import IdGen
@@ -180,6 +181,9 @@ def _form_assembly(state: SimulationState, mol_a_id: int, mol_b_id: int, id_gen:
         f"(Mol {mol_a_id} + Mol {mol_b_id})"
     )
 
+    # Phase 3: Roll for catalytic activation
+    try_catalysis_roll(state, asm)
+
 
 def _add_to_assembly(
     state: SimulationState, mol_id: int, neighbor_mol_id: int,
@@ -236,6 +240,9 @@ def _add_to_assembly(
     logger.debug(
         f"[TICK {state.tick}] ASSEMBLY GROW: Mol {mol_id} joined Assembly {assembly_id}"
     )
+
+    # Phase 3: Roll for catalytic activation
+    try_catalysis_roll(state, asm)
 
 
 def _remove_from_assembly(state: SimulationState, mol_id: int, assembly_id: int):
@@ -533,6 +540,8 @@ def handle_collisions(state: SimulationState, collisions: list[tuple[int, int]],
         # --- Regular bond formation ---
         if both_can_bond:
             prob = (a.formation_reactivity + b.formation_reactivity) / 2
+            # Phase 3: Catalysis bonus per bond (stacks across catalysts)
+            prob = min(1.0, prob + get_bond_catalysis_bonus(state, a_id, b_id))
             roll = random.random()
             if roll < prob:
                 logger.debug(
@@ -558,10 +567,6 @@ def _check_assembly_eligibility(state, a, b, config):
     a_in_asm = a.assembly_id is not None
     b_in_asm = b.assembly_id is not None
 
-    # Can't merge two assemblies
-    if a_in_asm and b_in_asm:
-        return None
-
     mol_a = state.molecules[a_mol_id]
     mol_b = state.molecules[b_mol_id]
 
@@ -569,6 +574,22 @@ def _check_assembly_eligibility(state, a, b, config):
         return None
     if not check_hbond_match(state, a_mol_id, b_mol_id):
         return None
+
+    # Both in different assemblies: pull molecule from smaller assembly into larger
+    if a_in_asm and b_in_asm:
+        if a.assembly_id == b.assembly_id:
+            return None  # same assembly, nothing to do
+        asm_a = state.assemblies[a.assembly_id]
+        asm_b = state.assemblies[b.assembly_id]
+        # Molecule from smaller assembly joins the larger one
+        if len(asm_a.molecule_ids) >= len(asm_b.molecule_ids):
+            return {"type": "transfer", "target_asm_id": a.assembly_id,
+                    "target_mol_id": a_mol_id,
+                    "source_asm_id": b.assembly_id, "source_mol_id": b_mol_id}
+        else:
+            return {"type": "transfer", "target_asm_id": b.assembly_id,
+                    "target_mol_id": b_mol_id,
+                    "source_asm_id": a.assembly_id, "source_mol_id": a_mol_id}
 
     if a_in_asm:
         return {"type": "join", "asm_mol_id": a_mol_id, "free_mol_id": b_mol_id,
@@ -584,7 +605,35 @@ def _handle_assembly_collision(state, a_id, b_id, a, b, action, both_can_bond, i
     """Handle assembly-related collision. Returns True if an action was taken."""
     config = state.config
 
-    if action["type"] == "join":
+    if action["type"] == "transfer":
+        # Pull molecule from source assembly into target assembly
+        target_asm_id = action["target_asm_id"]
+        target_mol_id = action["target_mol_id"]
+        source_asm_id = action["source_asm_id"]
+        source_mol_id = action["source_mol_id"]
+
+        if (target_asm_id not in state.assemblies
+                or source_asm_id not in state.assemblies
+                or target_mol_id not in state.molecules
+                or source_mol_id not in state.molecules):
+            return False
+
+        target_asm = state.assemblies[target_asm_id]
+        M = len(target_asm.molecule_ids)
+        p_asm = _compute_assembly_chance(
+            config, state.molecules[target_mol_id].n,
+            state.molecules[source_mol_id].n, M)
+
+        if random.random() < p_asm:
+            _remove_from_assembly(state, source_mol_id, source_asm_id)
+            if target_asm_id in state.assemblies:
+                _add_to_assembly(state, source_mol_id, target_mol_id, target_asm_id, id_gen)
+            else:
+                _form_assembly(state, target_mol_id, source_mol_id, id_gen)
+            return True
+        return False
+
+    elif action["type"] == "join":
         asm_mol_id = action["asm_mol_id"]
         free_mol_id = action["free_mol_id"]
         asm_id = action["asm_id"]
@@ -982,3 +1031,154 @@ def _walk_chain(state: SimulationState, start_id: int, exclude_neighbor: int) ->
         current = next_id
 
     return visited
+
+
+# --- Phase 3: Catalysis ---
+
+def compute_catalysis_scaling(state: SimulationState, assembly: Assembly) -> float:
+    """Scaling factor proportional to both LCP sum and assembly size (M).
+
+    scaling = (1 + M * catalysis_m_bonus) * (sum_lcp / 5.0)
+    See FORMULAS.md Section 4 for details.
+    """
+    sum_lcp = sum(
+        state.blocks[bid].latent_catalytic_potential
+        for mid in assembly.molecule_ids
+        for bid in state.molecules[mid].block_ids
+    )
+    M = len(assembly.molecule_ids)
+    return (1 + M * state.config.catalysis_m_bonus) * (sum_lcp / 5.0)
+
+
+def try_catalysis_roll(state: SimulationState, assembly: Assembly):
+    """Roll to see if an assembly becomes catalytic.
+
+    Called once per assembly formation or growth event.
+    Already-catalytic assemblies stay catalytic.
+    See FORMULAS.md Section 4.1.
+    """
+    if assembly.is_catalytic:
+        return
+    scaling = compute_catalysis_scaling(state, assembly)
+    p_catalysis = state.config.base_catalysis_chance * scaling
+    if random.random() < p_catalysis:
+        assembly.is_catalytic = True
+        logger.debug(
+            f"[TICK {state.tick}] CATALYTIC: Assembly {assembly.id} "
+            f"became catalytic (p={p_catalysis:.3f})"
+        )
+
+
+def _block_in_assembly_range(state: SimulationState, assembly: Assembly, pos: Vector2) -> bool:
+    """Check if a position is within catalysis_range of any block in the assembly."""
+    r = state.config.catalysis_range
+    for mid in assembly.molecule_ids:
+        for bid in state.molecules[mid].block_ids:
+            if state.blocks[bid].position.distance_to(pos) < r:
+                return True
+    return False
+
+
+def _spawn_block_near_assembly(state: SimulationState, assembly: Assembly, id_gen: IdGen):
+    """Spawn a new building block in the external zone around a catalytic assembly."""
+    config = state.config
+    min_dist = state.gfx.bond_length  # must be outside the rigid body
+
+    # Collect all block positions in the assembly
+    asm_positions = [
+        state.blocks[bid].position
+        for mid in assembly.molecule_ids
+        for bid in state.molecules[mid].block_ids
+    ]
+
+    # Try to find a valid spawn point (outside rigid body, inside catalysis range)
+    pos = None
+    for _ in range(10):
+        origin = random.choice(asm_positions)
+        angle = random.uniform(0, 2 * math.pi)
+        dist = random.uniform(min_dist, config.catalysis_range)
+        candidate = Vector2(origin) + Vector2(math.cos(angle) * dist, math.sin(angle) * dist)
+
+        # Check it's not overlapping any assembly block
+        if all(candidate.distance_to(p) >= min_dist for p in asm_positions):
+            pos = candidate
+            break
+
+    if pos is None:
+        return  # couldn't find valid spot, skip this tick
+
+    # Clamp to simulation bounds
+    sim_width = state.gfx.window_width - 200  # legend panel
+    r = state.gfx.block_radius
+    pos.x = max(r, min(sim_width - r, pos.x))
+    pos.y = max(r, min(state.gfx.window_height - r, pos.y))
+
+    # Sample properties from normal distributions (same as initial generation)
+    from src.simulation import _sample_clamped_normal, _random_direction
+
+    mobility = _sample_clamped_normal(config.mobility_mean, config.mobility_std)
+    block = BuildingBlock(
+        id=id_gen.next(),
+        position=pos,
+        velocity=_random_direction() * mobility * config.speed_scale,
+        mobility=mobility,
+        formation_reactivity=_sample_clamped_normal(
+            config.formation_reactivity_mean, config.formation_reactivity_std
+        ),
+        breaking_reactivity=_sample_clamped_normal(
+            config.breaking_reactivity_mean, config.breaking_reactivity_std
+        ),
+        h_bond_type=random.choice([HBondType.DONOR, HBondType.ACCEPTOR]),
+        latent_catalytic_potential=_sample_clamped_normal(
+            config.latent_catalytic_mean, config.latent_catalytic_std
+        ),
+    )
+    state.blocks[block.id] = block
+    logger.debug(
+        f"[TICK {state.tick}] BLOCK SPAWNED: Block {block.id} near Assembly {assembly.id} "
+        f"at ({pos.x:.0f}, {pos.y:.0f})"
+    )
+
+
+def catalysis_step(state: SimulationState, id_gen: IdGen):
+    """Catalysis effects for all catalytic assemblies.
+
+    Called every catalysis_interval ticks.
+    - Block generation (Formula 4.2)
+    - Formation bonus is applied during handle_collisions, not here
+    """
+    config = state.config
+
+    for assembly in list(state.assemblies.values()):
+        if not assembly.is_catalytic:
+            continue
+
+        scaling = compute_catalysis_scaling(state, assembly)
+
+        # Block generation
+        p_gen = config.base_generation_chance * scaling
+        if random.random() < p_gen:
+            _spawn_block_near_assembly(state, assembly, id_gen)
+
+
+def get_bond_catalysis_bonus(state: SimulationState, a_id: int, b_id: int) -> float:
+    """Get the formation reactivity bonus for a bond from nearby catalysts.
+
+    A catalyst contributes its bonus if either block is within catalysis_range
+    of any block in the assembly. Bonuses from different catalysts stack.
+    See FORMULAS.md Section 4.3.
+    """
+    a_pos = state.blocks[a_id].position
+    b_pos = state.blocks[b_id].position
+    total_bonus = 0.0
+
+    for asm in state.assemblies.values():
+        if not asm.is_catalytic:
+            continue
+
+        if (_block_in_assembly_range(state, asm, a_pos)
+                or _block_in_assembly_range(state, asm, b_pos)):
+            scaling = compute_catalysis_scaling(state, asm)
+            total_bonus += state.config.base_reactivity_bonus * scaling
+
+    return total_bonus
