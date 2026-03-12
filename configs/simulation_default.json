@@ -1,5 +1,5 @@
 {
-    "num_blocks": 100,
+    "num_blocks": 500,
     "speed_scale": 2.0,
     "hydrolysis_interval": 60,
     "molec_mobility_penalty": 0.02,
@@ -8,9 +8,23 @@
     "mobility_mean": 0.5,
     "mobility_std": 0.15,
     "formation_reactivity_mean": 0.5,
-    "formation_reactivity_std": 0.15,
-    "breaking_reactivity_mean": 0.25,
+    "formation_reactivity_std": 0.25,
+    "breaking_reactivity_mean": 0.15,
     "breaking_reactivity_std": 0.10,
     "latent_catalytic_mean": 0.5,
-    "latent_catalytic_std": 0.20
+    "latent_catalytic_std": 0.20,
+
+    "assembly_enabled": true,
+    "base_assembly_chance": 0.5,
+    "assembly_bond_resistance": 0.2,
+    "assembly_mobility_penalty": 0.05,
+    "assembly_growth_bonus": 0.1,
+    "min_assembly_n": 5,
+
+    "base_catalysis_chance": 0.1,
+    "catalysis_range": 100.0,
+    "catalysis_interval": 60,
+    "base_generation_chance": 0.05,
+    "base_reactivity_bonus": 0.02,
+    "catalysis_m_bonus": 1.0
 }

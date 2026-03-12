@@ -302,7 +302,7 @@ def shift_entity(state: SimulationState, block_id: int, offset: Vector2):
 - `SpatialHash` class: insert blocks, query nearby blocks
 - `update_spatial_hash(state, spatial_hash)`: rebuild hash from current positions
 - `detect_collisions(state, spatial_hash) -> list[tuple[int, int]]`: find colliding block pairs
-- `deflect(state, a_id, b_id)`: elastic collision response
+- `deflect(state, a_id, b_id)`: mass-weighted elastic collision (mass = 1/mobility)
 - `compute_molecule_mobility(molecule, blocks, penalty) -> float`: mobility formula
 
 ### `src/chemistry.py` - Chemical Logic
@@ -693,14 +693,16 @@ return visited
 
 ```python
 def deflect(state, a_id, b_id):
+    """Mass-weighted elastic collision. Heavier entities (lower mobility) deflect less."""
     a, b = state.blocks[a_id], state.blocks[b_id]
     normal = b.position - a.position
-    if normal.length() == 0:
+    if normal.length_squared() == 0:
         normal = Vector2(1, 0)
-    normal = normal.normalize()
+    else:
+        normal = normal.normalize()
 
-    vel_a = get_entity_velocity(state, a_id)
-    vel_b = get_entity_velocity(state, b_id)
+    vel_a = Vector2(get_entity_velocity(state, a_id))
+    vel_b = Vector2(get_entity_velocity(state, b_id))
 
     rel_vel = vel_a - vel_b
     vel_along_normal = rel_vel.dot(normal)
@@ -708,17 +710,24 @@ def deflect(state, a_id, b_id):
     if vel_along_normal <= 0:
         return  # moving apart already
 
-    impulse = normal * vel_along_normal
-    set_entity_velocity(state, a_id, vel_a - impulse)
-    set_entity_velocity(state, b_id, vel_b + impulse)
+    # Mass = 1/mobility. Lower mobility = heavier = less deflection.
+    mass_a = get_entity_mass(state, a_id)   # 1/mobility of block/mol/assembly
+    mass_b = get_entity_mass(state, b_id)
+    total_mass = mass_a + mass_b
 
-    # Separate overlapping entities
+    # Elastic collision impulse, distributed by mass
+    j = 2 * vel_along_normal / total_mass
+    set_entity_velocity(state, a_id, vel_a - normal * (j * mass_b))
+    set_entity_velocity(state, b_id, vel_b + normal * (j * mass_a))
+
+    # Separate overlapping entities (lighter entity pushed more)
     dist = a.position.distance_to(b.position)
-    if dist < state.config.bond_length:
-        overlap = state.config.bond_length - dist
-        sep = normal * (overlap / 2 + 0.5)
-        shift_entity(state, a_id, -sep)
-        shift_entity(state, b_id, sep)
+    if dist < state.gfx.bond_length:
+        overlap = state.gfx.bond_length - dist + 0.5
+        ratio_a = mass_b / total_mass
+        ratio_b = mass_a / total_mass
+        shift_entity(state, a_id, -normal * (overlap * ratio_a))
+        shift_entity(state, b_id, normal * (overlap * ratio_b))
 ```
 
 #### Step 11: `main.py` - Game Loop
@@ -819,17 +828,27 @@ Phase 1 complete and all Phase 1 tests passing.
 
 ```python
 def check_hbond_match(state, mol_a_id, mol_b_id) -> bool:
+    """Check both forward and reversed alignment of mol_b."""
     mol_a = state.molecules[mol_a_id]
     mol_b = state.molecules[mol_b_id]
-    if len(mol_a.block_ids) != len(mol_b.block_ids):
+    if mol_a.n != mol_b.n:
         return False  # must be same length for full match
-    for a_bid, b_bid in zip(mol_a.block_ids, mol_b.block_ids):
-        a_type = state.blocks[a_bid].h_bond_type
-        b_type = state.blocks[b_bid].h_bond_type
-        if a_type == b_type:  # must be opposite (donor-acceptor)
-            return False
-    return True
+    if _all_opposite(state, mol_a.block_ids, mol_b.block_ids):
+        return True
+    if _all_opposite(state, mol_a.block_ids, list(reversed(mol_b.block_ids))):
+        return True
+    return False
+
+def _align_for_hbond(state, mol_a, mol_b):
+    """Reverse mol_b's block_ids if needed so donors align with acceptors spatially."""
+    if _all_opposite(state, mol_a.block_ids, mol_b.block_ids):
+        return  # already aligned
+    if _all_opposite(state, mol_a.block_ids, list(reversed(mol_b.block_ids))):
+        mol_b.block_ids = list(reversed(mol_b.block_ids))
+        mol_b.anchor_block_id = mol_b.block_ids[0]
 ```
+
+**Important:** `_align_for_hbond()` is called before flattening and H-bond creation in both `_form_assembly()` and `_add_to_assembly()`. This ensures that when molecules are stacked vertically, each position has a donor above an acceptor (or vice versa), so H-bonds connect properly in space.
 
 #### 2.2: Assembly Formation in Collision Handler
 
@@ -899,8 +918,10 @@ In `hydrolysis_step()`, modify break probability:
 ```python
 if a.assembly_id is not None and a.assembly_id == b.assembly_id:
     # Check if both blocks participate in H-bonding
+    # Resistance scales with M-1 (extra molecules beyond the first)
     if block_has_hbond(state, bond.block_a_id) and block_has_hbond(state, bond.block_b_id):
-        break_prob = max(0, break_prob - config.assembly_bond_resistance)
+        M = len(state.assemblies[a.assembly_id].molecule_ids)
+        break_prob = max(0, break_prob - config.assembly_bond_resistance * (M - 1))
 ```
 
 #### 2.6: Bond Break Inside Assembly
@@ -922,24 +943,44 @@ if mol_b_hbonded_both_sides(state, b_mol_id):
         add_to_assembly(state, a_mol_id, assembly)
 ```
 
-#### 2.8: Rendering Updates
+#### 2.8: Assembly Connectivity Check
 
-- H-bonds: dashed cyan lines (`(0, 200, 255)`)
-- Assembly blocks: subtle gold/yellow background circle behind the block
-- Legend panel: add H-bond color swatch
+After any molecule split or removal from an assembly, verify the assembly is still connected:
+```python
+def _check_assembly_connectivity(state, assembly_id):
+    """BFS over H-bond adjacency graph. If disconnected, split into separate assemblies."""
+    # Build adjacency: which mols are connected by H-bonds?
+    # BFS from first molecule
+    # If all reached -> intact
+    # Otherwise -> dissolve original, re-form connected components with >= 2 mols
+```
+
+**Optimizations:**
+- Skipped for assemblies with <= 2 molecules (already handled by `< 2` dissolve check)
+- Only runs after molecule split/removal events, not every tick
+
+#### 2.9: Rendering Updates
+
+- H-bonds: blue lines (`(50, 120, 255)`), width configurable via `h_bond_width`
+- Assembly blocks: goldenrod outline (`(218, 165, 32)`, 2px, radius+1)
+- Legend panel: H-bond swatch + Assembly swatch
 
 ### Phase 2 Testing Checklist
 
-- [ ] H-bond matching correctly identifies full donor-acceptor correspondence
-- [ ] Molecules with N >= 5 and matching types form assemblies
-- [ ] Assembly moves as a single rigid body
-- [ ] Bonds inside assemblies get hydrolysis protection (lower break rate)
-- [ ] Bonds at molecule edges (not H-bonded) don't get protection
-- [ ] Bond break inside assembly splits molecule but keeps fragments in assembly
-- [ ] Single-block fragments are removed from assembly
-- [ ] Displacement rule: larger molecule replaces smaller in contested assembly
-- [ ] H-bonds render as dashed cyan lines
-- [ ] Scenario test: two N=5 molecules with perfect matching, aimed at each other
+- [x] H-bond matching correctly identifies full donor-acceptor correspondence (forward + reversed)
+- [x] Molecules with N >= min_assembly_n and matching types form assemblies
+- [x] Assembly moves as a single rigid body
+- [x] Bonds inside assemblies get hydrolysis protection (lower break rate)
+- [x] Bonds at molecule edges (not H-bonded) don't get protection
+- [x] Bond break inside assembly splits molecule but keeps fragments in assembly
+- [x] Single-block fragments are removed from assembly
+- [x] Displacement rule: larger molecule replaces smallest neighbor in contested assembly
+- [x] H-bond alignment: mol_b reversed if needed so donor-acceptor pairs line up spatially
+- [x] Assembly connectivity: split assembly dissolves and re-forms connected components
+- [x] H-bonds render as blue lines
+- [x] Assembly blocks get goldenrod outline
+- [x] Mass-weighted elastic collisions (heavier entities deflect less)
+- [x] Scenario tests: alignment, fragile bond/singleton, rebond, displacement
 
 ---
 
@@ -956,28 +997,40 @@ Phase 2 complete and stable.
 
 ### Implementation Steps
 
-#### 3.1: Catalysis Roll
+#### 3.1: Catalysis Scaling Factor
+
+All three catalysis effects (chance, generation, reactivity bonus) share a common scaling pattern:
+
+```python
+def compute_catalysis_scaling(state, assembly):
+    """Scaling factor proportional to both LCP sum and assembly size (M)."""
+    sum_lcp = sum(
+        state.blocks[bid].latent_catalytic_potential
+        for mid in assembly.molecule_ids
+        for bid in state.molecules[mid].block_ids
+    )
+    M = len(assembly.molecule_ids)
+    return (1 + M * config.catalysis_m_bonus) * (sum_lcp / 5.0)
+```
+
+**Normalization:** Fixed constant `5.0` (= `0.5 * 10`, baseline of 10 blocks at average 0.5). This is intentionally NOT tied to `latent_catalytic_mean` — raising the mean makes the system more catalytic overall.
+
+**Example (defaults, M=2, 10 blocks at avg 0.5):**
+- `sum_lcp = 5.0`, `scaling = (1 + 2*1.0) * (5.0/5.0) = 3.0`
+- All catalysis effects are tripled relative to their base values
+
+#### 3.2: Catalysis Roll
 
 In the assembly formation handler (after `form_assembly()` or `add_to_assembly()`):
 ```python
 if not assembly.is_catalytic:
-    if random.random() < config.catalysis_chance:
+    scaling = compute_catalysis_scaling(state, assembly)
+    p_catalysis = config.base_catalysis_chance * scaling
+    if random.random() < p_catalysis:
         assembly.is_catalytic = True
-assembly.catalysis_score = compute_catalysis_score(state, assembly)
 ```
 
-#### 3.2: Catalysis Score Computation
-
-```python
-def compute_catalysis_score(state, assembly):
-    total = sum(
-        state.blocks[bid].latent_catalytic_potential
-        for mol_id in assembly.molecule_ids
-        for bid in state.molecules[mol_id].block_ids
-    )
-    M = len(assembly.molecule_ids)
-    return total * (1 + config.catalysis_m_bonus * M)
-```
+**Only rolled once** per assembly formation or growth event. Already catalytic assemblies stay catalytic.
 
 #### 3.3: Catalysis Step in Simulation Loop
 
@@ -993,13 +1046,14 @@ for assembly in state.assemblies.values():
     if not assembly.is_catalytic:
         continue
 
+    scaling = compute_catalysis_scaling(state, assembly)
+
     # Block generation
-    p_gen = min(1.0, assembly.catalysis_score * config.generation_factor)
+    p_gen = config.base_generation_chance * scaling
     if random.random() < p_gen:
         spawn_block_near_assembly(state, assembly, id_gen)
 
     # Formation bonus is applied during handle_collisions, not here
-    # Just mark the assembly's range for the collision handler to check
 ```
 
 #### 3.4: Formation Bonus in Collision Handler
@@ -1024,7 +1078,8 @@ def get_catalysis_bonus(state, block_id):
         for mol_id in asm.molecule_ids:
             for bid in state.molecules[mol_id].block_ids:
                 if block.position.distance_to(state.blocks[bid].position) < state.config.catalysis_range:
-                    bonus = asm.catalysis_score * state.config.reactivity_bonus_factor
+                    scaling = compute_catalysis_scaling(state, asm)
+                    bonus = config.base_reactivity_bonus * scaling
                     max_bonus = max(max_bonus, bonus)
                     break  # found one in range, no need to check more blocks in this molecule
     return max_bonus
@@ -1041,10 +1096,10 @@ def get_catalysis_bonus(state, block_id):
 
 ### Phase 3 Testing Checklist
 
-- [ ] Assemblies become catalytic at expected rate
-- [ ] Catalysis score computed correctly from block properties
-- [ ] New blocks spawn within catalysis range
-- [ ] Formation reactivity bonus applies to blocks in range
+- [ ] Assemblies become catalytic at expected rate (scales with LCP and M)
+- [ ] Catalysis scaling computed correctly from block properties and assembly size
+- [ ] New blocks spawn within catalysis range (generation scales with LCP and M)
+- [ ] Formation reactivity bonus applies to blocks in range (scales with LCP and M)
 - [ ] Bonus is temporary (doesn't modify stored property)
 - [ ] Multiple catalysts: max bonus used, not cumulative
 - [ ] Catalyst visualization: gold border, range circle

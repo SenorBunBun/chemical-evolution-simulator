@@ -1,4 +1,6 @@
 {
+    "window_width": 800,
+    "window_height": 800,
     "scenario_blocks": [
         {"position": [150, 300], "mobility": 0.1, "formation_reactivity": 0.5, "breaking_reactivity": 0.0, "h_bond_type": "donor", "latent_catalytic_potential": 0.5},
         {"position": [166, 300], "mobility": 0.1, "formation_reactivity": 0.5, "breaking_reactivity": 0.0, "h_bond_type": "acceptor", "latent_catalytic_potential": 0.3},

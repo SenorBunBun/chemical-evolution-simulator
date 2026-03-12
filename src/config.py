@@ -26,6 +26,7 @@ class SimConfig:
     latent_catalytic_std: float = 0.20
 
     # Phase 2: Assembly
+    assembly_enabled: bool = True
     base_assembly_chance: float = 0.3
     assembly_bond_resistance: float = 0.2
     assembly_mobility_penalty: float = 0.03
@@ -33,16 +34,17 @@ class SimConfig:
     min_assembly_n: int = 5
 
     # Phase 3: Catalysis
-    catalysis_chance: float = 0.1
+    base_catalysis_chance: float = 0.1
     catalysis_range: float = 100.0
     catalysis_interval: int = 60
-    generation_factor: float = 0.05
-    reactivity_bonus_factor: float = 0.02
-    catalysis_m_bonus: float = 0.1
+    base_generation_chance: float = 0.05
+    base_reactivity_bonus: float = 0.02
+    catalysis_m_bonus: float = 1.0
 
     # Scenario mode
     scenario_blocks: Optional[list[dict]] = None
     scenario_molecules: Optional[list[dict]] = None
+    scenario_assemblies: Optional[list[dict]] = None
 
 
 @dataclass
@@ -70,6 +72,7 @@ class GfxConfig:
     bond_color_fragile: list[int] = field(default_factory=lambda: [180, 180, 180]) # gray
 
     bond_width: int = 3
+    h_bond_width: int = 1
     block_outline: bool = True  # outline on blocks in molecules
 
 

@@ -46,20 +46,38 @@ def compute_molecule_mobility(molecule, blocks: dict, penalty: float) -> float:
 
 # --- Movement ---
 
+def compute_assembly_mobility(assembly, state: SimulationState) -> float:
+    """Assembly mobility = avg(molecule mobilities) - penalty * M, min 0.01."""
+    config = state.config
+    mol_mobs = []
+    for mid in assembly.molecule_ids:
+        mol = state.molecules[mid]
+        mol_mobs.append(compute_molecule_mobility(mol, state.blocks, config.molec_mobility_penalty))
+    avg = sum(mol_mobs) / len(mol_mobs)
+    return max(0.01, avg - config.assembly_mobility_penalty * len(assembly.molecule_ids))
+
+
 def move_all(state: SimulationState):
-    """Move all entities by their velocities. Free blocks, then molecules."""
+    """Move all entities: assemblies, standalone molecules, free blocks."""
     config = state.config
     sim_width = state.gfx.window_width - 200  # legend panel width
 
-    # Track which molecules we've already moved (avoid double-moving)
-    moved_molecules = set()
+    # 1. Move assemblies (and all their molecules)
+    assembled_mol_ids = set()
+    for asm in state.assemblies.values():
+        _move_assembly(state, asm, sim_width)
+        assembled_mol_ids.update(asm.molecule_ids)
 
+    # 2. Move standalone molecules (not in any assembly)
+    moved_molecules = set()
     for block in state.blocks.values():
         if block.molecule_id is not None:
-            if block.molecule_id not in moved_molecules:
-                moved_molecules.add(block.molecule_id)
-                _move_molecule(state, state.molecules[block.molecule_id], sim_width)
-        else:
+            mid = block.molecule_id
+            if mid in assembled_mol_ids or mid in moved_molecules:
+                continue
+            moved_molecules.add(mid)
+            _move_molecule(state, state.molecules[mid], sim_width)
+        elif block.molecule_id is None and block.assembly_id is None:
             # Free block
             speed = block.mobility * config.speed_scale
             if block.velocity.length_squared() > 0:
@@ -132,6 +150,59 @@ def _wall_bounce_molecule(molecule, state: SimulationState, sim_width: float):
             molecule.velocity.y = -abs(molecule.velocity.y)
 
 
+def _move_assembly(state: SimulationState, assembly, sim_width: float):
+    """Move an assembly as a rigid body."""
+    mobility = compute_assembly_mobility(assembly, state)
+    speed = mobility * state.config.speed_scale
+    if assembly.velocity.length_squared() > 0:
+        assembly.velocity = assembly.velocity.normalize() * speed
+
+    # Move assembly anchor
+    anchor_mol = state.molecules[assembly.anchor_molecule_id]
+    anchor_block = state.blocks[anchor_mol.anchor_block_id]
+    anchor_block.position += assembly.velocity
+
+    # Wall bounce
+    _wall_bounce_assembly(assembly, state, sim_width)
+
+    # Reposition all molecules and blocks from offsets
+    asm_anchor_pos = anchor_block.position
+    for mid in assembly.molecule_ids:
+        mol = state.molecules[mid]
+        mol_anchor_pos = Vector2(asm_anchor_pos) + assembly.offsets[mid]
+        state.blocks[mol.anchor_block_id].position = Vector2(mol_anchor_pos)
+        for bid in mol.block_ids:
+            state.blocks[bid].position = Vector2(mol_anchor_pos) + mol.offsets[bid]
+
+
+def _wall_bounce_assembly(assembly, state: SimulationState, sim_width: float):
+    """Bounce an assembly off walls, checking all blocks across all molecules."""
+    r = state.gfx.block_radius
+    h = state.gfx.window_height
+    anchor_mol = state.molecules[assembly.anchor_molecule_id]
+    anchor_block = state.blocks[anchor_mol.anchor_block_id]
+
+    for mid in assembly.molecule_ids:
+        mol = state.molecules[mid]
+        mol_offset = assembly.offsets[mid]
+        for bid in mol.block_ids:
+            pos = Vector2(anchor_block.position) + mol_offset + mol.offsets[bid]
+
+            if pos.x < r:
+                anchor_block.position.x += (r - pos.x)
+                assembly.velocity.x = abs(assembly.velocity.x)
+            elif pos.x > sim_width - r:
+                anchor_block.position.x -= (pos.x - (sim_width - r))
+                assembly.velocity.x = -abs(assembly.velocity.x)
+
+            if pos.y < r:
+                anchor_block.position.y += (r - pos.y)
+                assembly.velocity.y = abs(assembly.velocity.y)
+            elif pos.y > h - r:
+                anchor_block.position.y -= (pos.y - (h - r))
+                assembly.velocity.y = -abs(assembly.velocity.y)
+
+
 # --- Collision Detection ---
 
 def update_spatial_hash(state: SimulationState, spatial_hash: SpatialHash):
@@ -172,8 +243,14 @@ def detect_collisions(state: SimulationState, spatial_hash: SpatialHash) -> list
 # --- Deflection ---
 
 def deflect(state: SimulationState, a_id: int, b_id: int):
-    """Elastic collision response between two entities that don't bond."""
-    from src.entities import get_entity_velocity, set_entity_velocity, shift_entity
+    """Mass-weighted elastic collision response between two entities.
+
+    Heavier entities (lower mobility) are deflected less.
+    Uses 1/mobility as effective mass for impulse distribution.
+    """
+    from src.entities import (
+        get_entity_velocity, set_entity_velocity, shift_entity, get_entity_mass,
+    )
 
     a = state.blocks[a_id]
     b = state.blocks[b_id]
@@ -193,14 +270,20 @@ def deflect(state: SimulationState, a_id: int, b_id: int):
     if vel_along_normal <= 0:
         return  # already moving apart
 
-    impulse = normal * vel_along_normal
-    set_entity_velocity(state, a_id, vel_a - impulse)
-    set_entity_velocity(state, b_id, vel_b + impulse)
+    mass_a = get_entity_mass(state, a_id)
+    mass_b = get_entity_mass(state, b_id)
+    total_mass = mass_a + mass_b
 
-    # Separate overlapping entities
+    # Impulse magnitude from 1D elastic collision
+    j = 2 * vel_along_normal / total_mass
+    set_entity_velocity(state, a_id, vel_a - normal * (j * mass_b))
+    set_entity_velocity(state, b_id, vel_b + normal * (j * mass_a))
+
+    # Separate overlapping entities (proportional to inverse mass)
     dist = a.position.distance_to(b.position)
     if dist < state.gfx.bond_length:
-        overlap = state.gfx.bond_length - dist
-        sep = normal * (overlap / 2 + 0.5)
-        shift_entity(state, a_id, -sep)
-        shift_entity(state, b_id, sep)
+        overlap = state.gfx.bond_length - dist + 0.5
+        ratio_a = mass_b / total_mass  # lighter gets pushed more
+        ratio_b = mass_a / total_mass
+        shift_entity(state, a_id, -normal * (overlap * ratio_a))
+        shift_entity(state, b_id, normal * (overlap * ratio_b))

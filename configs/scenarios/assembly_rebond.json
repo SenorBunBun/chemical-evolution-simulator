@@ -1,0 +1,27 @@
+{
+    "base_assembly_chance": 1.0,
+    "min_assembly_n": 2,
+    "hydrolysis_interval": 5,
+    "scenario_blocks": [
+        {"position": [500, 400], "mobility": 0.3, "formation_reactivity": 0.9, "breaking_reactivity": 0.0, "h_bond_type": "donor",    "latent_catalytic_potential": 0.5},
+        {"position": [508, 400], "mobility": 0.3, "formation_reactivity": 0.9, "breaking_reactivity": 0.0, "h_bond_type": "acceptor", "latent_catalytic_potential": 0.5},
+        {"position": [516, 400], "mobility": 0.3, "formation_reactivity": 0.9, "breaking_reactivity": 1.0, "h_bond_type": "donor",    "latent_catalytic_potential": 0.5},
+        {"position": [524, 400], "mobility": 0.3, "formation_reactivity": 0.9, "breaking_reactivity": 1.0, "h_bond_type": "acceptor", "latent_catalytic_potential": 0.5},
+        {"position": [532, 400], "mobility": 0.3, "formation_reactivity": 0.9, "breaking_reactivity": 0.0, "h_bond_type": "donor",    "latent_catalytic_potential": 0.5},
+        {"position": [540, 400], "mobility": 0.3, "formation_reactivity": 0.9, "breaking_reactivity": 0.0, "h_bond_type": "acceptor", "latent_catalytic_potential": 0.5},
+
+        {"position": [500, 408], "mobility": 0.3, "formation_reactivity": 0.9, "breaking_reactivity": 0.0, "h_bond_type": "acceptor", "latent_catalytic_potential": 0.5},
+        {"position": [508, 408], "mobility": 0.3, "formation_reactivity": 0.9, "breaking_reactivity": 0.0, "h_bond_type": "donor",    "latent_catalytic_potential": 0.5},
+        {"position": [516, 408], "mobility": 0.3, "formation_reactivity": 0.9, "breaking_reactivity": 0.0, "h_bond_type": "acceptor", "latent_catalytic_potential": 0.5},
+        {"position": [524, 408], "mobility": 0.3, "formation_reactivity": 0.9, "breaking_reactivity": 0.0, "h_bond_type": "donor",    "latent_catalytic_potential": 0.5},
+        {"position": [532, 408], "mobility": 0.3, "formation_reactivity": 0.9, "breaking_reactivity": 0.0, "h_bond_type": "acceptor", "latent_catalytic_potential": 0.5},
+        {"position": [540, 408], "mobility": 0.3, "formation_reactivity": 0.9, "breaking_reactivity": 0.0, "h_bond_type": "donor",    "latent_catalytic_potential": 0.5}
+    ],
+    "scenario_molecules": [
+        {"block_indices": [0, 1, 2, 3, 4, 5], "velocity": [0.0, 0.0]},
+        {"block_indices": [6, 7, 8, 9, 10, 11], "velocity": [0.0, 0.0]}
+    ],
+    "scenario_assemblies": [
+        {"molecule_indices": [0, 1], "velocity": [0.5, 0.3]}
+    ]
+}

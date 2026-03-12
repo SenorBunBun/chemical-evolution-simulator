@@ -7,6 +7,7 @@ from typing import Optional
 from pygame.math import Vector2
 
 from src.config import GfxConfig, SimConfig
+from src.id_gen import IdGen
 
 
 class HBondType(Enum):
@@ -72,6 +73,7 @@ class Assembly:
 class SimulationState:
     config: SimConfig
     gfx: GfxConfig
+    id_gen: IdGen = field(default_factory=IdGen)
     blocks: dict[int, BuildingBlock] = field(default_factory=dict)
     bonds: dict[int, Bond] = field(default_factory=dict)
     molecules: dict[int, Molecule] = field(default_factory=dict)
@@ -87,6 +89,7 @@ class SimulationState:
         "avg_molecule_size": [],
         "avg_molecule_size_formed": [],
         "num_assemblies": [],
+        "num_h_bonds": [],
         "num_catalytic": [],
     })
 
@@ -96,6 +99,24 @@ class SimulationState:
 def can_bond(state: SimulationState, block_id: int) -> bool:
     """True if block has fewer than 2 bonds (linear bonding rule)."""
     return len(state.blocks[block_id].bond_ids) < 2
+
+
+def get_entity_mass(state: SimulationState, block_id: int) -> float:
+    """Get the effective mass of the rigid group this block belongs to.
+
+    Mass = 1 / mobility.  Lower mobility means heavier.
+    """
+    block = state.blocks[block_id]
+    if block.assembly_id is not None:
+        from src.physics import compute_assembly_mobility
+        asm = state.assemblies[block.assembly_id]
+        return 1.0 / compute_assembly_mobility(asm, state)
+    if block.molecule_id is not None:
+        from src.physics import compute_molecule_mobility
+        mol = state.molecules[block.molecule_id]
+        mob = compute_molecule_mobility(mol, state.blocks, state.config.molec_mobility_penalty)
+        return 1.0 / mob
+    return 1.0 / max(0.01, block.mobility)
 
 
 def get_entity_velocity(state: SimulationState, block_id: int) -> Vector2:

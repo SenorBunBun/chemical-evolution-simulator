@@ -38,6 +38,7 @@ class Renderer:
     DIM_TEXT = (140, 140, 140)
     GRID_COLOR = (200, 200, 200)
     MOL_OUTLINE = (0, 0, 0)
+    ASM_OUTLINE = (218, 165, 32)  # goldenrod
 
     def __init__(self, sim_config: SimConfig, gfx: GfxConfig):
         pygame.init()
@@ -119,7 +120,10 @@ class Renderer:
             pygame.draw.circle(self.screen, color, (x, y), r)
 
             if self.gfx.block_outline and block.molecule_id is not None:
-                pygame.draw.circle(self.screen, self.MOL_OUTLINE, (x, y), r, 1)
+                if block.assembly_id is not None:
+                    pygame.draw.circle(self.screen, self.ASM_OUTLINE, (x, y), r + 1, 2)
+                else:
+                    pygame.draw.circle(self.screen, self.MOL_OUTLINE, (x, y), r, 1)
 
     def _draw_bonds(self, state: SimulationState):
         for bond in state.bonds.values():
@@ -127,8 +131,8 @@ class Renderer:
             b = state.blocks[bond.block_b_id]
 
             if bond.is_h_bond:
-                color = (0, 200, 255)
-                width = 1
+                color = (50, 120, 255)
+                width = self.gfx.h_bond_width
             else:
                 break_prob = (a.breaking_reactivity + b.breaking_reactivity) / 2
                 color = self._bond_color_fn(break_prob)
@@ -179,7 +183,22 @@ class Renderer:
             "Bond Strength", self._bond_color_fn,
             "0.0 (strong)", "1.0 (fragile)",
         )
-        y += 30
+        y += 15
+
+        # H-bond swatch
+        hb_label = self.font.render("H-Bond", True, self.TEXT_COLOR)
+        self.screen.blit(hb_label, (panel_x + margin, y))
+        hb_x = panel_x + margin + 60
+        pygame.draw.line(self.screen, (50, 120, 255),
+                         (hb_x, y + 8), (hb_x + 30, y + 8), 1)
+        y += 20
+
+        # Assembly swatch
+        asm_label = self.font.render("Assembly", True, self.TEXT_COLOR)
+        self.screen.blit(asm_label, (panel_x + margin, y))
+        asm_x = panel_x + margin + 72
+        pygame.draw.circle(self.screen, self.ASM_OUTLINE, (asm_x + 8, y + 8), 8, 2)
+        y += 25
 
         # Divider
         pygame.draw.line(self.screen, (60, 60, 60),
@@ -191,32 +210,143 @@ class Renderer:
         self.screen.blit(stats_title, (panel_x + margin, y))
         y += 22
 
+        # Count bond types
+        covalent_bonds = sum(1 for b in state.bonds.values() if not b.is_h_bond)
+        h_bonds = sum(1 for b in state.bonds.values() if b.is_h_bond)
+
         stats = [
             f"Tick: {state.tick}",
             f"Blocks: {len(state.blocks)}",
-            f"Bonds: {len(state.bonds)}",
+            f"Bonds: {covalent_bonds}",
+            f"H-Bonds: {h_bonds}",
             f"Molecules: {len(state.molecules)}",
         ]
         free_blocks = sum(1 for b in state.blocks.values() if b.molecule_id is None)
-        total_entities = free_blocks + len(state.molecules)
-        if total_entities > 0:
-            total_n = free_blocks + sum(m.n for m in state.molecules.values())
-            avg_n = total_n / total_entities
+        total = len(state.blocks)
+        if total > 0:
+            pct_bonded = (total - free_blocks) / total * 100
+            stats.append(f"Bonded: {pct_bonded:.0f}%")
+
+        # Avg N: average blocks per entity (free blocks count as N=1)
+        # Assemblies contribute their total block count as one entity
+        assembled_mol_ids = set()
+        for asm in state.assemblies.values():
+            assembled_mol_ids.update(asm.molecule_ids)
+        standalone_mols = [m for m in state.molecules.values() if m.id not in assembled_mol_ids]
+
+        num_entities = free_blocks + len(standalone_mols) + len(state.assemblies)
+        if num_entities > 0:
+            total_n = free_blocks
+            total_n += sum(m.n for m in standalone_mols)
+            total_n += sum(
+                sum(state.molecules[mid].n for mid in asm.molecule_ids)
+                for asm in state.assemblies.values()
+            )
+            avg_n = total_n / num_entities
             stats.append(f"Avg N: {avg_n:.1f}")
         else:
             stats.append("Avg N: -")
+
         if state.molecules:
             avg_n_formed = sum(m.n for m in state.molecules.values()) / len(state.molecules)
             stats.append(f"Avg N (formed): {avg_n_formed:.1f}")
         else:
             stats.append("Avg N (formed): -")
+
+        stats.append(f"Assemblies: {len(state.assemblies)}")
+
+        # Avg M: average molecules per assembly
         if state.assemblies:
-            stats.append(f"Assemblies: {len(state.assemblies)}")
+            avg_m = sum(len(a.molecule_ids) for a in state.assemblies.values()) / len(state.assemblies)
+            stats.append(f"Avg M: {avg_m:.1f}")
+        else:
+            stats.append("Avg M: -")
 
         for line in stats:
             text = self.small_font.render(line, True, self.DIM_TEXT)
             self.screen.blit(text, (panel_x + margin, y))
             y += 16
+
+        # Debug-only detailed stats
+        if self.debug_mode:
+            y += 10
+            debug_label = self.font.render("DEBUG STATS", True, (255, 200, 80))
+            self.screen.blit(debug_label, (panel_x + margin, y))
+            y += 20
+
+            mols = list(state.molecules.values())
+            mol_sizes = [m.n for m in mols]
+
+            n5_plus = sum(1 for n in mol_sizes if n >= 5)
+            n10_plus = sum(1 for n in mol_sizes if n >= 10)
+            max_n = max(mol_sizes) if mol_sizes else 0
+
+            # Donor / acceptor counts
+            donors = sum(1 for b in state.blocks.values() if b.h_bond_type.value == "donor")
+            acceptors = len(state.blocks) - donors
+
+            # Blocks currently H-bonded
+            hbonded_block_ids = set()
+            for bond in state.bonds.values():
+                if bond.is_h_bond:
+                    hbonded_block_ids.add(bond.block_a_id)
+                    hbonded_block_ids.add(bond.block_b_id)
+
+            # Avg formation & breaking reactivity
+            if state.blocks:
+                avg_form = sum(b.formation_reactivity for b in state.blocks.values()) / len(state.blocks)
+                avg_break = sum(b.breaking_reactivity for b in state.blocks.values()) / len(state.blocks)
+            else:
+                avg_form = avg_break = 0.0
+
+            # Largest assembly
+            max_asm_mols = max((len(a.molecule_ids) for a in state.assemblies.values()), default=0)
+            max_asm_blocks = 0
+            for a in state.assemblies.values():
+                n_blocks = sum(state.molecules[mid].n for mid in a.molecule_ids)
+                if n_blocks > max_asm_blocks:
+                    max_asm_blocks = n_blocks
+
+            # Potential assembly matches: eligible mols (N >= min_assembly_n,
+            # not already assembled) and how many pairs are H-bond compatible
+            min_n = state.config.min_assembly_n
+            eligible = [m for m in mols
+                        if m.n >= min_n and m.assembly_id is None]
+            match_pairs = 0
+            for i in range(len(eligible)):
+                for j in range(i + 1, len(eligible)):
+                    a, b = eligible[i], eligible[j]
+                    if a.n != b.n:
+                        continue
+                    fwd = all(
+                        state.blocks[ab].h_bond_type != state.blocks[bb].h_bond_type
+                        for ab, bb in zip(a.block_ids, b.block_ids)
+                    )
+                    rev = all(
+                        state.blocks[ab].h_bond_type != state.blocks[bb].h_bond_type
+                        for ab, bb in zip(a.block_ids, reversed(b.block_ids))
+                    )
+                    if fwd or rev:
+                        match_pairs += 1
+
+            debug_stats = [
+                f"Mols N>=5: {n5_plus}",
+                f"Mols N>=10: {n10_plus}",
+                f"Max N: {max_n}",
+                f"Donors: {donors}  Acc: {acceptors}",
+                f"H-bonded blocks: {len(hbonded_block_ids)}",
+                f"Avg form react: {avg_form:.2f}",
+                f"Avg break react: {avg_break:.2f}",
+                f"Largest asm: {max_asm_mols}M / {max_asm_blocks}N",
+                f"Eligible (N>={min_n}): {len(eligible)}",
+                f"Matching pairs: {match_pairs}",
+            ]
+
+            for line in debug_stats:
+                text = self.small_font.render(line, True, (255, 220, 120))
+                self.screen.blit(text, (panel_x + margin, y))
+                y += 16
+
         y += 20
 
         # Divider

@@ -120,17 +120,39 @@ For each axis (x, y):
 | Variable | Type | Description |
 |----------|------|-------------|
 | `block_radius` | float | config - visual/collision radius of a block |
-| `sim_width` | float | Simulation area width (window_width * 0.8 for legend panel) |
+| `sim_width` | float | Simulation area width (window_width - legend panel) |
 | `sim_height` | float | Simulation area height (window_height) |
 | `entity_velocity` | Vector2 | Velocity of the block/molecule/assembly this block belongs to |
 
 **For molecules/assemblies:** Check ALL blocks. If ANY block exceeds bounds, reflect the entity velocity on that axis and shift the anchor so the offending block is exactly at the boundary.
 
-**Used in:** `physics.wall_bounce()`, `physics.wall_bounce_molecule()`
+**Used in:** `physics._wall_bounce_block()`, `physics._wall_bounce_molecule()`, `physics._wall_bounce_assembly()`
 
 ---
 
-### 1.6 Elastic Deflection (No Bond Formed)
+### 1.6 Effective Mass
+
+```
+mass = 1.0 / mobility
+```
+
+Where `mobility` is:
+- For free blocks: `max(0.01, block.mobility)`
+- For molecules: `compute_molecule_mobility()` (formula 1.2)
+- For assemblies: `compute_assembly_mobility()` (formula 1.3)
+
+| Variable | Type | Description |
+|----------|------|-------------|
+| `mobility` | float | >= 0.01 | Effective mobility of the entity |
+| `mass` | float | >= 1.0 | Effective mass (inverse of mobility) |
+
+**Interpretation:** Lower mobility = heavier entity. Assemblies naturally become very heavy as mobility drops with size.
+
+**Used in:** `entities.get_entity_mass()`, `physics.deflect()`
+
+---
+
+### 1.7 Mass-Weighted Elastic Deflection
 
 ```
 normal = normalize(block_b.position - block_a.position)
@@ -138,16 +160,21 @@ rel_vel = vel_a - vel_b
 vel_along_normal = dot(rel_vel, normal)
 
 if vel_along_normal > 0:    # only if approaching
-    impulse = normal * vel_along_normal
-    vel_a = vel_a - impulse
-    vel_b = vel_b + impulse
+    mass_a = 1.0 / mobility_a
+    mass_b = 1.0 / mobility_b
+    total_mass = mass_a + mass_b
 
-# Separation (prevent overlap)
+    j = 2 * vel_along_normal / total_mass
+    vel_a = vel_a - normal * (j * mass_b)
+    vel_b = vel_b + normal * (j * mass_a)
+
+# Separation (mass-weighted, prevent overlap)
 overlap = bond_length - distance(block_a.position, block_b.position)
 if overlap > 0:
-    separation = normal * (overlap / 2 + 0.5)
-    shift_entity(a, -separation)
-    shift_entity(b, +separation)
+    ratio_a = mass_b / total_mass   # lighter gets pushed more
+    ratio_b = mass_a / total_mass
+    shift_entity(a, -normal * overlap * ratio_a)
+    shift_entity(b, +normal * overlap * ratio_b)
 ```
 
 | Variable | Type | Description |
@@ -155,16 +182,17 @@ if overlap > 0:
 | `normal` | Vector2 | Unit vector from block A to block B (collision axis) |
 | `rel_vel` | Vector2 | Relative velocity of A with respect to B |
 | `vel_along_normal` | float | Component of relative velocity along collision normal |
-| `impulse` | Vector2 | Velocity change applied to both entities |
-| `vel_a`, `vel_b` | Vector2 | Entity velocities (molecule velocity if in molecule, else block velocity) |
+| `mass_a`, `mass_b` | float | Effective masses from formula 1.6 |
+| `j` | float | Impulse magnitude from elastic collision equation |
+| `vel_a`, `vel_b` | Vector2 | Entity velocities (assembly > molecule > block) |
 
-**Equal mass assumption** for simplicity. Both entities receive equal and opposite impulse.
+**Key behavior:** A small block bouncing off a large assembly barely moves the assembly. The impulse is distributed inversely proportional to mass. Separation push also favors moving the lighter entity.
 
-**Used in:** `physics.deflect()` or `chemistry.handle_collisions()` when bond fails to form.
+**Used in:** `physics.deflect()`
 
 ---
 
-### 1.7 Velocity on Merge (Bond Formation)
+### 1.8 Velocity on Merge (Bond Formation)
 
 ```
 combined_vel = (vel_a * N_a + vel_b * N_b) / (N_a + N_b)
@@ -188,7 +216,7 @@ merged_velocity = normalize(combined_vel) * new_speed
 
 ---
 
-### 1.8 Velocity on Split (Bond Breaking)
+### 1.9 Velocity on Split (Bond Breaking)
 
 ```
 perturbation = Vector2(uniform(-0.3, 0.3), uniform(-0.3, 0.3))
@@ -206,7 +234,9 @@ frag_velocity = direction * frag_mobility * speed_scale
 
 **For single-block fragments (N=1):** Use `block.mobility` directly instead of `compute_molecule_mobility`.
 
-**Used in:** `chemistry.split_molecule()`
+**For assembled molecules:** Uses the assembly velocity as base direction. Fragments with N >= 2 stay in the assembly; singletons (N=1) are ejected.
+
+**Used in:** `chemistry._split_molecule()`
 
 ---
 
@@ -227,7 +257,7 @@ Bond forms if: random() < P_bond
 | `block_b.formation_reactivity` | float | 0.0 - 1.0 | Block B's tendency to form bonds |
 | `P_bond` | float | 0.0 - 1.0 | Probability of bond forming on this collision |
 
-**Prerequisites:** Both blocks must have `len(bond_ids) < 2` (can_bond check).
+**Prerequisites:** Both blocks must have `len(bond_ids) < 2` (can_bond check). Both blocks must NOT be in an assembly.
 
 **With catalysis bonus (Phase 3):**
 ```
@@ -265,15 +295,20 @@ Bond breaks if: random() < P_break
 P_break_base = (block_a.breaking_reactivity + block_b.breaking_reactivity) / 2
 
 if both blocks are in the same assembly AND both participate in H-bonds:
-    P_break = max(0, P_break_base - assembly_bond_resistance)
+    M = number of molecules in the assembly
+    P_break = max(0, P_break_base - assembly_bond_resistance * (M - 1))
 else:
     P_break = P_break_base
 ```
 
 | Variable | Type | Range | Description |
 |----------|------|-------|-------------|
-| `assembly_bond_resistance` | float | config | Penalty subtracted from break probability for protected bonds |
+| `assembly_bond_resistance` | float | config | Base resistance per extra molecule in assembly |
+| `M` | int | >= 2 | Number of molecules in the assembly |
+| `M - 1` | int | >= 1 | Extra molecules beyond the first (a 2-mol assembly gives 1x resistance) |
 | `P_break` | float | 0.0 - 1.0 | Final adjusted break probability |
+
+**Scales with M-1:** Larger assemblies provide stronger bond protection. A 2-molecule assembly subtracts `resistance * 1`, a 3-molecule assembly subtracts `resistance * 2`, etc. Using `M-1` means a lone molecule joining an assembly provides the base resistance, and each additional molecule increases protection further.
 
 **Key rule:** Only bonds where BOTH constituent blocks participate in H-bonding get assembly protection. Bonds at the edges of molecules (not H-bonded) do NOT get protection.
 
@@ -302,7 +337,7 @@ can_assemble = (
 | `min_assembly_n` | int | config - minimum molecule size for assembly (default 5) |
 | `full_hbond_match` | bool | Every donor in mol_a pairs with an acceptor in mol_b and vice versa |
 
-**H-bond matching:** Walk both molecule chains simultaneously. At each position, check that one block is DONOR and the other is ACCEPTOR. ALL pairs must match (full correspondence). The molecules must have the same N for full matching.
+**H-bond matching:** Walk both molecule chains simultaneously. At each position, check that one block is DONOR and the other is ACCEPTOR. ALL pairs must match (full correspondence). The molecules must have the same N for full matching. **Both forward and reversed alignment** of mol_b are checked — if reversed order matches, mol_b's block_ids are reversed before H-bond creation so donors align spatially with acceptors.
 
 **Used in:** `chemistry.handle_collisions()`
 
@@ -366,7 +401,7 @@ else:
 ```
 When Mol A collides with Mol B, and Mol B is in an assembly H-bonded on BOTH sides:
 
-    Mol C = the molecule on the other side of Mol B from the collision
+    Mol C = the smallest neighbor of Mol B in the assembly
 
     if N_A > N_C:
         remove Mol C from assembly
@@ -378,9 +413,32 @@ When Mol A collides with Mol B, and Mol B is in an assembly H-bonded on BOTH sid
 | Variable | Type | Description |
 |----------|------|-------------|
 | `N_A` | int | Block count of the incoming molecule |
-| `N_C` | int | Block count of the molecule to be potentially displaced |
+| `N_C` | int | Block count of the smallest neighboring molecule |
 
 **Used in:** `chemistry.handle_collisions()` (Phase 2)
+
+---
+
+### 3.5 Assembly Connectivity Check
+
+```
+After a molecule splits or is removed from an assembly:
+
+    Build H-bond adjacency graph between molecules in the assembly
+    BFS from first molecule to find connected component
+
+    if connected_component == all_molecules:
+        assembly stays intact
+    else:
+        dissolve original assembly
+        for each connected component with >= 2 molecules:
+            re-form as a new assembly
+        components with < 2 molecules: freed
+```
+
+**Optimization:** Skipped for assemblies with <= 2 molecules (already handled by the `< 2` dissolve check). Only runs on assembly-related split/removal events, not every tick.
+
+**Used in:** `chemistry._check_assembly_connectivity()`
 
 ---
 
@@ -388,18 +446,44 @@ When Mol A collides with Mol B, and Mol B is in an assembly H-bonded on BOTH sid
 
 **Module:** `src/chemistry.py`
 
-### 4.1 Catalysis Roll
+All three catalysis effects share a common scaling pattern that makes them proportional to both the assembly's accumulated latent catalytic potential and its size (M):
+
+```
+scaling_factor = (1 + M * catalysis_m_bonus) * (sum_lcp / 5.0)
+```
+
+| Variable | Type | Description |
+|----------|------|-------------|
+| `M` | int | Number of molecules in the assembly |
+| `catalysis_m_bonus` | float | config (default 1.0) — how strongly M amplifies catalysis |
+| `sum_lcp` | float | Sum of `latent_catalytic_potential` across ALL blocks in the assembly |
+| `5.0` | constant | Fixed normalization = `0.5 * 10` (10 blocks at the baseline average of 0.5) |
+
+**Normalization:** The denominator is a **fixed constant of 5.0**, not tied to `latent_catalytic_mean`. This means changing `latent_catalytic_mean` in config directly changes how catalytic the system is — a higher mean produces higher `sum_lcp` values, which increases scaling without being canceled out by the denominator. An assembly of 10 blocks at baseline average (0.5) gives `sum_lcp / 5.0 = 1.0`. Above-average systems scale higher, making catalysis more prevalent.
+
+---
+
+### 4.1 Catalysis Chance
 
 ```
 When an assembly forms or a molecule is added to an existing assembly:
 
-    if random() < catalysis_chance:
+    sum_lcp = sum(block.latent_catalytic_potential for all blocks in assembly)
+    scaling = (1 + M * catalysis_m_bonus) * (sum_lcp / 5.0)
+    P_catalysis = base_catalysis_chance * scaling
+
+    if random() < P_catalysis:
         assembly.is_catalytic = True
 ```
 
 | Variable | Type | Range | Description |
 |----------|------|-------|-------------|
-| `catalysis_chance` | float | config | Probability of becoming catalytic on formation/growth |
+| `base_catalysis_chance` | float | config | Base probability of becoming catalytic |
+| `P_catalysis` | float | >= 0 | Effective probability, scales with M and total catalytic potential |
+
+**Example (defaults):** Assembly with M=2, 10 blocks, all at average LCP (0.5):
+- `sum_lcp = 5.0`, `scaling = (1 + 2*1.0) * (5.0 / 5.0) = 3.0`
+- `P_catalysis = 0.1 * 3.0 = 0.3` (30% chance)
 
 **Only rolled once** per assembly formation or growth event. An assembly that is already catalytic stays catalytic.
 
@@ -407,29 +491,12 @@ When an assembly forms or a molecule is added to an existing assembly:
 
 ---
 
-### 4.2 Catalysis Score
+### 4.2 Block Generation Probability
 
 ```
-catalysis_score = sum(block.latent_catalytic_potential for block in all_assembly_blocks) * (1 + catalysis_m_bonus * M)
-```
-
-| Variable | Type | Range | Description |
-|----------|------|-------|-------------|
-| `block.latent_catalytic_potential` | float | 0.0 - 1.0 | Each block's intrinsic catalytic potential |
-| `catalysis_m_bonus` | float | config | Scaling bonus per molecule in assembly |
-| `M` | int | >= 2 | Number of molecules in the assembly |
-| `catalysis_score` | float | >= 0 | Overall catalytic power of the assembly |
-
-**Recomputed** whenever the assembly grows (molecule added or removed).
-
-**Used in:** `chemistry.catalysis_step()` to determine generation and bonus effects
-
----
-
-### 4.3 Block Generation Probability
-
-```
-P_generate = min(1.0, catalysis_score * generation_factor)
+sum_lcp = sum(block.latent_catalytic_potential for all blocks in assembly)
+scaling = (1 + M * catalysis_m_bonus) * (sum_lcp / 5.0)
+P_generate = base_generation_chance * scaling
 
 Checked every catalysis_interval ticks.
 If random() < P_generate:
@@ -438,9 +505,8 @@ If random() < P_generate:
 
 | Variable | Type | Range | Description |
 |----------|------|-------|-------------|
-| `catalysis_score` | float | >= 0 | From formula 4.2 |
-| `generation_factor` | float | config | Converts score to probability |
-| `P_generate` | float | 0.0 - 1.0 | Probability of spawning a new block |
+| `base_generation_chance` | float | config (default 0.05) | Base probability of spawning a block |
+| `P_generate` | float | >= 0 | Effective generation probability |
 | `catalysis_interval` | int | config | Ticks between catalysis checks |
 
 **Spawn location:** Random position within `catalysis_range` of the assembly's center.
@@ -449,12 +515,14 @@ If random() < P_generate:
 
 ---
 
-### 4.4 Formation Reactivity Bonus
+### 4.3 Formation Reactivity Bonus
 
 ```
 For each block within catalysis_range of a catalytic assembly:
 
-    catalysis_bonus = catalysis_score * reactivity_bonus_factor
+    sum_lcp = sum(block.latent_catalytic_potential for all blocks in assembly)
+    scaling = (1 + M * catalysis_m_bonus) * (sum_lcp / 5.0)
+    catalysis_bonus = base_reactivity_bonus * scaling
 
 Applied during collision handling:
     effective_reactivity = min(1.0, block.formation_reactivity + catalysis_bonus)
@@ -463,8 +531,8 @@ Applied during collision handling:
 | Variable | Type | Range | Description |
 |----------|------|-------|-------------|
 | `catalysis_range` | float | config | Radius of catalytic influence (pixels) |
-| `reactivity_bonus_factor` | float | config | Converts score to reactivity bonus |
-| `catalysis_bonus` | float | >= 0 | Additive bonus to formation reactivity |
+| `base_reactivity_bonus` | float | config (default 0.02) | Base additive bonus to formation reactivity |
+| `catalysis_bonus` | float | >= 0 | Scaled bonus applied to nearby blocks |
 
 **Temporary effect** - does NOT modify the block's stored property. Applied only during collision probability computation for blocks within range.
 
@@ -478,57 +546,71 @@ Applied during collision handling:
 
 **Module:** `src/renderer.py`
 
-### 5.1 Block Color (Formation Reactivity)
+### 5.1 Block Color (Linear Interpolation)
 
 ```
-hue = (1.0 - formation_reactivity) * 240
-color = HSV(hue, saturation=100%, value=100%)
+t = clamp(property_value, 0.0, 1.0)
+color = block_color_low + (block_color_high - block_color_low) * t
 ```
 
-| Reactivity | Hue | Color |
-|-----------|-----|-------|
-| 0.0 (low) | 240 | Blue |
-| 0.25 | 180 | Cyan |
-| 0.5 (mid) | 120 | Green |
-| 0.75 | 60 | Yellow |
-| 1.0 (high) | 0 | Red |
+| Property Value | Default Color | Meaning |
+|---------------|---------------|---------|
+| 0.0 (low) | Blue [0,0,255] | Inert / slow / stable |
+| 0.5 (mid) | Purple [128,0,128] | Moderate |
+| 1.0 (high) | Red [255,0,0] | Reactive / fast / fragile |
 
-**Interpretation:** Hot colors (red/yellow) = highly reactive blocks that bond easily. Cool colors (blue/cyan) = inert blocks.
+**Configurable:** `block_color_low`, `block_color_high`, `block_color_by` in graphics config.
 
-**Used in:** `renderer.draw_blocks()`
+**H-bond type mode:** Discrete colors instead of gradient — Donor = blue (80,130,255), Acceptor = red (255,80,80).
+
+**Used in:** `renderer._get_block_color()`
 
 ---
 
-### 5.2 Bond Color (Breaking Strength)
+### 5.2 Bond Color (Linear Interpolation)
 
 ```
 avg_break = (block_a.breaking_reactivity + block_b.breaking_reactivity) / 2
-hue = (1.0 - avg_break) * 120
-color = HSV(hue, saturation=100%, value=100%)
+t = clamp(avg_break, 0.0, 1.0)
+color = bond_color_strong + (bond_color_fragile - bond_color_strong) * t
 ```
 
-| Break Prob | Hue | Color | Meaning |
-|-----------|-----|-------|---------|
-| 0.0 (stable) | 120 | Green | Strong bond, resistant to hydrolysis |
-| 0.5 (mid) | 60 | Yellow | Moderate bond |
-| 1.0 (fragile) | 0 | Red | Weak bond, breaks easily |
+| Break Prob | Default Color | Meaning |
+|-----------|---------------|---------|
+| 0.0 (stable) | bond_color_strong | Strong bond |
+| 1.0 (fragile) | bond_color_fragile | Weak bond |
 
-**Used in:** `renderer.draw_bonds()`
+**Configurable:** `bond_color_strong`, `bond_color_fragile` in graphics config.
+
+**Used in:** `renderer._draw_bonds()`
 
 ---
 
 ### 5.3 H-Bond Color (Phase 2)
 
 ```
-color = fixed CYAN (0, 200, 255)
-style = dashed line
+color = fixed Blue (50, 120, 255)
+width = h_bond_width (configurable, default 1)
 ```
 
-**Used in:** `renderer.draw_bonds()` when `bond.is_h_bond == True`
+**Used in:** `renderer._draw_bonds()` when `bond.is_h_bond == True`
 
 ---
 
-### 5.4 Catalytic Assembly Highlight (Phase 3)
+### 5.4 Assembly Outline (Phase 2)
+
+```
+outline_color = Goldenrod (218, 165, 32)
+outline_width = 2px, radius = block_radius + 1
+```
+
+Blocks in assemblies get a goldenrod outline instead of the black molecule outline.
+
+**Used in:** `renderer._draw_blocks()`
+
+---
+
+### 5.5 Catalytic Assembly Highlight (Phase 3)
 
 ```
 highlight_color = GOLD (255, 215, 0)
@@ -546,31 +628,34 @@ range_circle_color = GOLD with alpha 30 (255, 215, 0, 30)
 
 All tunable parameters and their defaults:
 
-### Physics Parameters
+### Physics Parameters (graphics config)
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `speed_scale` | 2.0 | Multiplier: speed = mobility * speed_scale |
 | `block_radius` | 8.0 | Visual and collision radius of a block (pixels) |
 | `bond_length` | 16.0 | Distance between bonded block centers (= 2 * block_radius) |
+| `bond_width` | 3 | Width of covalent bond lines (pixels) |
+| `h_bond_width` | 1 | Width of H-bond lines (pixels) |
 
-### Chemistry Parameters
+### Chemistry Parameters (simulation config)
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `hydrolysis_interval` | 60 | Bond breaking checks every N ticks |
 | `molec_mobility_penalty` | 0.02 | Mobility reduction per block in a molecule |
+| `assembly_enabled` | true | Toggle assembly formation on/off |
 | `assembly_bond_resistance` | 0.2 | Subtracted from break probability for H-bonded assembly bonds |
 | `assembly_mobility_penalty` | 0.03 | Mobility reduction per molecule in an assembly |
 | `base_assembly_chance` | 0.3 | Base probability of assembly formation |
 | `assembly_growth_bonus` | 0.1 | Bonus to assembly chance per existing molecule |
 | `min_assembly_n` | 5 | Minimum molecule size (N) for assembly eligibility |
-| `catalysis_chance` | 0.1 | Probability of becoming catalytic on assembly formation/growth |
+| `base_catalysis_chance` | 0.1 | Base probability of becoming catalytic (scaled by LCP and M) |
 | `catalysis_range` | 100.0 | Radius of catalytic influence (pixels) |
 | `catalysis_interval` | 60 | Catalysis effects checked every N ticks |
-| `generation_factor` | 0.05 | Converts catalysis_score to block generation probability |
-| `reactivity_bonus_factor` | 0.02 | Converts catalysis_score to formation reactivity bonus |
-| `catalysis_m_bonus` | 0.1 | Catalysis score scaling per molecule in assembly |
+| `base_generation_chance` | 0.05 | Base probability of spawning a block (scaled by LCP and M) |
+| `base_reactivity_bonus` | 0.02 | Base formation reactivity bonus for nearby blocks (scaled by LCP and M) |
+| `catalysis_m_bonus` | 1.0 | How strongly M amplifies all catalysis effects |
 
 ### Property Sampling (Normal Distribution)
 
@@ -594,7 +679,7 @@ This produces a bell-curve centered at `mean`, with ~68% of values within 1 std 
 | `breaking_reactivity` | 0.25 | 0.10 | 0.15 - 0.35 | Lower mean; bonds should persist somewhat |
 | `latent_catalytic_potential` | 0.5 | 0.20 | 0.30 - 0.70 | Wide spread; catalysis is emergent |
 
-**Config parameters** (all modifiable in `configs/default.json`):
+**Config parameters** (all modifiable in `configs/simulation_default.json`):
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
@@ -609,11 +694,18 @@ This produces a bell-curve centered at `mean`, with ~68% of values within 1 std 
 
 **Implementation:** `src/simulation.py` -> `_sample_clamped_normal(mean, std)`
 
-### Window Parameters
+### Graphics Parameters
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `window_width` | 1200 | Total window width (pixels) |
 | `window_height` | 800 | Total window height (pixels) |
 | `target_fps` | 60 | Target frames per second |
+| `bg_color` | [255,255,255] | Background color (white) |
+| `block_color_by` | "formation_reactivity" | Which property drives block color |
+| `block_color_low` | [0,0,255] | Color for property value 0.0 (blue) |
+| `block_color_high` | [255,0,0] | Color for property value 1.0 (red) |
+| `bond_color_strong` | [0,0,0] | Color for bonds with low break probability (black) |
+| `bond_color_fragile` | [180,180,180] | Color for bonds with high break probability (gray) |
+| `block_outline` | true | Draw outline on blocks in molecules |
 | `num_blocks` | 50 | Number of building blocks to generate |
