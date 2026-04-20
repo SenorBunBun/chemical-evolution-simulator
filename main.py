@@ -12,12 +12,7 @@ import logging
 import os
 import sys
 
-import pygame
-
 from src.config import load_gfx_config, load_sim_config
-from src.id_gen import IdGen
-from src.physics import SpatialHash
-from src.renderer import Renderer
 from src.simulation import create_initial_state, step
 
 DEFAULT_SIM = "configs/simulation_default.json"
@@ -29,11 +24,14 @@ def main():
     sim_path = None
     gfx_path = None
     verbose = False
+    headless = False
     args = sys.argv[1:]
     i = 0
     while i < len(args):
         if args[i] == "--verbose":
             verbose = True
+        elif args[i] == "--headless":
+            headless = True
         elif args[i] == "--gfx" and i + 1 < len(args):
             i += 1
             gfx_path = args[i]
@@ -58,6 +56,20 @@ def main():
     else:
         sim_config = load_sim_config(sim_path)
     gfx_config = load_gfx_config(gfx_path)
+
+    if headless:
+        sim_config.headless = True
+
+    if sim_config.headless:
+        from src.headless import run_headless
+        run_headless(sim_config, gfx_config)
+        return
+
+    # GUI mode
+    import pygame
+    from src.id_gen import IdGen
+    from src.physics import SpatialHash
+    from src.renderer import Renderer
 
     id_gen = IdGen()
     state = create_initial_state(sim_config, gfx_config, id_gen)

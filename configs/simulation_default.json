@@ -6,26 +6,35 @@
     "history_interval": 30,
 
     "mobility_mean": 0.5,
-    "mobility_std": 0.15,
+    "mobility_std": 0.25,
+    "og_mobility_std" : 0.15,
     "formation_reactivity_mean": 0.5,
     "formation_reactivity_std": 0.25,
-    "breaking_reactivity_mean": 0.25,
-    "breaking_reactivity_std": 0.10,
+    "breaking_reactivity_mean": 0.5,
+    "og_break_reac_mean_std" : [0.25, 0.1],
+    "breaking_reactivity_std": 0.25,
     "latent_catalytic_mean": 0.5,
     "latent_catalytic_std": 0.20,
 
     "assembly_enabled": true,
     "base_assembly_chance": 0.5,
-    "assembly_bond_resistance": 0.2,
+    "assembly_bond_resistance": 0.3,
     "assembly_mobility_penalty": 0.05,
     "assembly_growth_bonus": 0.1,
     "min_assembly_n": 5,
 
     "base_catalysis_chance": 0.1,
+    "og_catalytic_chance": 0.1,
     "catalysis_range": 30.0,
     "catalysis_interval": 60,
-    "base_generation_chance": 0.01,
-    "_comment_for_base_gen_original_val": 0.005,
+    "base_generation_chance": 0.008,
+    "_comment_for_base_gen_original_val": [0.005, 0.01],
+
     "base_reactivity_bonus": 0.02,
-    "catalysis_m_bonus": 1.0
+    "catalysis_m_bonus": 1.0,
+
+    "headless": false,
+    "headless_max_ticks": 250000,
+    "headless_gather_tick": 100,
+    "headless_csv_path": "output/headless_results.csv"
 }

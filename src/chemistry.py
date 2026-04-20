@@ -181,9 +181,6 @@ def _form_assembly(state: SimulationState, mol_a_id: int, mol_b_id: int, id_gen:
         f"(Mol {mol_a_id} + Mol {mol_b_id})"
     )
 
-    # Phase 3: Roll for catalytic activation
-    try_catalysis_roll(state, asm)
-
 
 def _add_to_assembly(
     state: SimulationState, mol_id: int, neighbor_mol_id: int,
@@ -240,9 +237,6 @@ def _add_to_assembly(
     logger.debug(
         f"[TICK {state.tick}] ASSEMBLY GROW: Mol {mol_id} joined Assembly {assembly_id}"
     )
-
-    # Phase 3: Roll for catalytic activation
-    try_catalysis_roll(state, asm)
 
 
 def _remove_from_assembly(state: SimulationState, mol_id: int, assembly_id: int):
@@ -611,7 +605,7 @@ def _handle_assembly_collision(state, a_id, b_id, a, b, action, both_can_bond, i
     config = state.config
 
     if action["type"] == "transfer":
-        # Pull molecule from source assembly into target assembly
+        # Merge: pull all molecules from source assembly into target
         target_asm_id = action["target_asm_id"]
         target_mol_id = action["target_mol_id"]
         source_asm_id = action["source_asm_id"]
@@ -630,11 +624,26 @@ def _handle_assembly_collision(state, a_id, b_id, a, b, action, both_can_bond, i
             state.molecules[source_mol_id].n, M)
 
         if random.random() < p_asm:
-            _remove_from_assembly(state, source_mol_id, source_asm_id)
+            # Collect all molecules from source before dissolving
+            source_asm = state.assemblies[source_asm_id]
+            source_mols = list(source_asm.molecule_ids)
+            _dissolve_assembly(state, source_asm_id)
+
+            # Add each source molecule to target
+            for mol_id in source_mols:
+                if (mol_id not in state.molecules
+                        or target_asm_id not in state.assemblies):
+                    continue
+                mol = state.molecules[mol_id]
+                if mol.n < config.min_assembly_n:
+                    continue
+                if not check_hbond_match(state, target_mol_id, mol_id):
+                    continue
+                _add_to_assembly(state, mol_id, target_mol_id, target_asm_id, id_gen)
+
+            # Catalysis roll once on the final merged assembly
             if target_asm_id in state.assemblies:
-                _add_to_assembly(state, source_mol_id, target_mol_id, target_asm_id, id_gen)
-            else:
-                _form_assembly(state, target_mol_id, source_mol_id, id_gen)
+                try_catalysis_roll(state, state.assemblies[target_asm_id])
             return True
         return False
 
@@ -660,8 +669,13 @@ def _handle_assembly_collision(state, a_id, b_id, a, b, action, both_can_bond, i
                 _remove_from_assembly(state, smallest_id, asm_id)
                 if asm_id in state.assemblies:
                     _add_to_assembly(state, free_mol_id, asm_mol_id, asm_id, id_gen)
+                    try_catalysis_roll(state, state.assemblies[asm_id])
                 else:
                     _form_assembly(state, asm_mol_id, free_mol_id, id_gen)
+                    # Find the newly formed assembly for the roll
+                    new_asm_id = state.blocks[state.molecules[asm_mol_id].block_ids[0]].assembly_id
+                    if new_asm_id and new_asm_id in state.assemblies:
+                        try_catalysis_roll(state, state.assemblies[new_asm_id])
                 return True
             return False  # displacement failed
 
@@ -671,10 +685,14 @@ def _handle_assembly_collision(state, a_id, b_id, a, b, action, both_can_bond, i
             config, state.molecules[asm_mol_id].n,
             state.molecules[free_mol_id].n, M)
 
+        def _join_and_roll():
+            _add_to_assembly(state, free_mol_id, asm_mol_id, asm_id, id_gen)
+            if asm_id in state.assemblies:
+                try_catalysis_roll(state, state.assemblies[asm_id])
+
         return _attempt_weighted_outcome(
             state, a_id, b_id, a, b, both_can_bond, p_asm,
-            lambda: _add_to_assembly(state, free_mol_id, asm_mol_id, asm_id, id_gen),
-            id_gen,
+            _join_and_roll, id_gen,
         )
 
     else:  # "new"
@@ -687,10 +705,15 @@ def _handle_assembly_collision(state, a_id, b_id, a, b, action, both_can_bond, i
         mol_b = state.molecules[mol_b_id]
         p_asm = _compute_assembly_chance(config, mol_a.n, mol_b.n, 0)
 
+        def _form_and_roll():
+            _form_assembly(state, mol_a_id, mol_b_id, id_gen)
+            new_asm_id = state.blocks[state.molecules[mol_a_id].block_ids[0]].assembly_id
+            if new_asm_id and new_asm_id in state.assemblies:
+                try_catalysis_roll(state, state.assemblies[new_asm_id])
+
         return _attempt_weighted_outcome(
             state, a_id, b_id, a, b, both_can_bond, p_asm,
-            lambda: _form_assembly(state, mol_a_id, mol_b_id, id_gen),
-            id_gen,
+            _form_and_roll, id_gen,
         )
 
 

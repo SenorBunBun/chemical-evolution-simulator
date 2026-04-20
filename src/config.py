@@ -41,6 +41,12 @@ class SimConfig:
     base_reactivity_bonus: float = 0.02
     catalysis_m_bonus: float = 1.0
 
+    # Headless mode
+    headless: bool = False
+    headless_max_ticks: int = 250_000
+    headless_gather_tick: int = 100
+    headless_csv_path: str = "output/headless_results.csv"
+
     # Scenario mode
     scenario_blocks: Optional[list[dict]] = None
     scenario_molecules: Optional[list[dict]] = None
