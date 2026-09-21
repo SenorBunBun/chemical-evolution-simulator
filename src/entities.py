@@ -80,7 +80,7 @@ class SimulationState:
     assemblies: dict[int, Assembly] = field(default_factory=dict)
     tick: int = 0
     paused: bool = False
-    speed_multiplier: int = 1
+    speed_multiplier: int = 2
     history: dict[str, list] = field(default_factory=lambda: {
         "tick": [],
         "num_blocks": [],

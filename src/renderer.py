@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import logging
+import os
+
 import pygame
 from pygame.math import Vector2
 
 from src.config import GfxConfig, SimConfig
 from src.entities import SimulationState
+
+logger = logging.getLogger(__name__)
 
 
 # --- Color Helpers ---
@@ -56,8 +61,52 @@ class Renderer:
         self._bond_color_fn = _make_lerp_color_fn(
             tuple(gfx.bond_color_strong), tuple(gfx.bond_color_fragile)
         )
+        self._bg_surface = self._load_background(gfx)
+        self._hbond_sprite_cache: dict[tuple, pygame.Surface | None] = {}
         self.debug_mode = False
         self._stepping = False
+
+    def _load_background(self, gfx: GfxConfig):
+        """Load and scale the background image if configured. Returns None on failure."""
+        if not gfx.background_image:
+            return None
+        if not os.path.exists(gfx.background_image):
+            logger.warning("Background image not found, using bg_color: %s", gfx.background_image)
+            return None
+        try:
+            img = pygame.image.load(gfx.background_image).convert()
+            return pygame.transform.smoothscale(img, (gfx.window_width, gfx.window_height))
+        except pygame.error as e:
+            logger.warning("Failed to load background image %s: %s", gfx.background_image, e)
+            return None
+
+    def _get_hbond_sprite(self, is_donor: bool, diameter: int) -> pygame.Surface | None:
+        """Load, rotate, and cache the donor/acceptor sprite at a given diameter.
+
+        Rotation lets the knob/notch line up with the vertical H-bond axis.
+        Returns None (and caches the miss) if illustrated blocks are off or
+        the file is missing, so callers fall back to the procedural circle.
+        """
+        key = ("donor" if is_donor else "acceptor", diameter)
+        if key in self._hbond_sprite_cache:
+            return self._hbond_sprite_cache[key]
+
+        path = self.gfx.donor_image if is_donor else self.gfx.acceptor_image
+        rotation = self.gfx.donor_rotation if is_donor else self.gfx.acceptor_rotation
+        sprite = None
+        if path and os.path.exists(path):
+            try:
+                img = pygame.image.load(path).convert_alpha()
+                if rotation:
+                    img = pygame.transform.rotate(img, rotation)
+                sprite = pygame.transform.smoothscale(img, (diameter, diameter))
+            except pygame.error as e:
+                logger.warning("Failed to load %s sprite %s: %s", key[0], path, e)
+        elif path:
+            logger.warning("%s image not found, using circle fallback: %s", key[0], path)
+
+        self._hbond_sprite_cache[key] = sprite
+        return sprite
 
     def handle_events(self, state: SimulationState) -> bool:
         """Process input events. Returns False if quit requested."""
@@ -95,7 +144,10 @@ class Renderer:
 
     def draw(self, state: SimulationState):
         """Render one frame: simulation area + legend panel."""
-        self.screen.fill(tuple(self.gfx.bg_color))
+        if self._bg_surface is not None:
+            self.screen.blit(self._bg_surface, (0, 0))
+        else:
+            self.screen.fill(tuple(self.gfx.bg_color))
 
         # Catalyst zones first (underneath everything)
         self._draw_catalyst_zones(state)
@@ -161,14 +213,33 @@ class Renderer:
     def _draw_blocks(self, state: SimulationState):
         r = int(self.gfx.block_radius)
         color_by = self.gfx.block_color_by
+        base_diameter = r * 2
+        overlap_diameter = int(base_diameter * self.gfx.hbond_overlap_scale)
+
+        hbonded_ids: set[int] = set()
+        if self.gfx.use_illustrated_blocks and color_by == "h_bond_type":
+            for bond in state.bonds.values():
+                if bond.is_h_bond:
+                    hbonded_ids.add(bond.block_a_id)
+                    hbonded_ids.add(bond.block_b_id)
 
         for block in state.blocks.values():
             x, y = int(block.position.x), int(block.position.y)
             if x < 0 or x > self.sim_width or y < 0 or y > self.gfx.window_height:
                 continue
 
-            color = self._get_block_color(block, color_by)
-            pygame.draw.circle(self.screen, color, (x, y), r)
+            sprite = None
+            if self.gfx.use_illustrated_blocks and color_by == "h_bond_type":
+                is_donor = block.h_bond_type.value == "donor"
+                diameter = overlap_diameter if block.id in hbonded_ids else base_diameter
+                sprite = self._get_hbond_sprite(is_donor, diameter)
+
+            if sprite is not None:
+                half = sprite.get_width() // 2
+                self.screen.blit(sprite, (x - half, y - half))
+            else:
+                color = self._get_block_color(block, color_by)
+                pygame.draw.circle(self.screen, color, (x, y), r)
 
             if self.gfx.block_outline and block.molecule_id is not None:
                 if block.assembly_id is not None:
@@ -216,10 +287,17 @@ class Renderer:
 
         if color_by == "h_bond_type":
             # Discrete legend instead of gradient
-            y = self._draw_discrete_legend(
-                panel_x + margin, y, info[0],
-                [("Donor", (80, 130, 255)), ("Acceptor", (255, 80, 80))]
-            )
+            if self.gfx.use_illustrated_blocks:
+                items = [
+                    ("Donor", (80, 130, 255), self._get_hbond_sprite(True, int(self.gfx.block_radius) * 2)),
+                    ("Acceptor", (255, 80, 80), self._get_hbond_sprite(False, int(self.gfx.block_radius) * 2)),
+                ]
+            else:
+                items = [
+                    ("Donor", (80, 130, 255), None),
+                    ("Acceptor", (255, 80, 80), None),
+                ]
+            y = self._draw_discrete_legend(panel_x + margin, y, info[0], items)
         else:
             y = self._draw_gradient_bar(
                 panel_x + margin, y, panel_w - 2 * margin,
@@ -463,15 +541,24 @@ class Renderer:
         return y + bar_height + 5
 
     def _draw_discrete_legend(self, x, y, label, items):
-        """Draw a discrete color legend (for h_bond_type etc.)."""
+        """Draw a discrete legend (for h_bond_type etc.).
+
+        Each item is (name, color, sprite). If sprite is given, it's drawn
+        as a small thumbnail instead of the plain colored swatch.
+        """
         text = self.font.render(label, True, self.TEXT_COLOR)
         self.screen.blit(text, (x, y))
         y += 22
-        for name, color in items:
-            pygame.draw.circle(self.screen, color, (x + 10, y + 6), 6)
+        swatch = 16
+        for name, color, sprite in items:
+            if sprite is not None:
+                thumb = pygame.transform.smoothscale(sprite, (swatch, swatch))
+                self.screen.blit(thumb, (x + 2, y))
+            else:
+                pygame.draw.circle(self.screen, color, (x + 10, y + 6), 6)
             lbl = self.small_font.render(name, True, self.DIM_TEXT)
-            self.screen.blit(lbl, (x + 22, y))
-            y += 18
+            self.screen.blit(lbl, (x + swatch + 6, y + (swatch - 12) // 2))
+            y += swatch + 4
         return y + 5
 
     def _draw_debug(self, state: SimulationState):

@@ -81,6 +81,26 @@ class GfxConfig:
     h_bond_width: int = 1
     block_outline: bool = True  # outline on blocks in molecules
 
+    # Optional illustrated background image, scaled to fill the window.
+    # Falls back to bg_color if the path is None or the file is missing.
+    background_image: Optional[str] = None
+
+    # Illustrated donor/acceptor blocks (used only when block_color_by == "h_bond_type").
+    # Falls back to the procedural circle if disabled or a file is missing.
+    use_illustrated_blocks: bool = False
+    donor_image: Optional[str] = None
+    acceptor_image: Optional[str] = None
+
+    # Fixed rotation (degrees) applied to each sprite so its knobs/notches
+    # line up with the vertical H-bond axis (assemblies only ever stack
+    # vertically -- rigid bodies translate but never rotate).
+    donor_rotation: float = 0.0
+    acceptor_rotation: float = 90.0
+
+    # How much larger to draw a block's sprite when it currently has an
+    # H-bond, so its knob visually overlaps into its partner's notch.
+    hbond_overlap_scale: float = 1.4
+
     # Phase 3: Catalysis rendering
     catalysis_range_color: list[int] = field(default_factory=lambda: [0, 200, 0])  # green
     catalysis_range_alpha: int = 30  # transparency for range circle fill
