@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+from typing import Optional
 
 import pygame
 from pygame.math import Vector2
@@ -36,6 +37,44 @@ def _make_lerp_color_fn(low: tuple, high: tuple):
     return fn
 
 
+def _convex_hull(points: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    """Andrew's monotone chain convex hull. Returns hull points in CCW order."""
+    pts = sorted(set(points))
+    if len(pts) <= 2:
+        return pts
+
+    def cross(o, a, b):
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+
+    lower = []
+    for p in pts:
+        while len(lower) >= 2 and cross(lower[-2], lower[-1], p) <= 0:
+            lower.pop()
+        lower.append(p)
+    upper = []
+    for p in reversed(pts):
+        while len(upper) >= 2 and cross(upper[-2], upper[-1], p) <= 0:
+            upper.pop()
+        upper.append(p)
+    return lower[:-1] + upper[:-1]
+
+
+def _expand_hull(hull: list[tuple[int, int]], padding: int) -> list[tuple[float, float]]:
+    """Push each hull point outward from the centroid by padding pixels."""
+    cx = sum(p[0] for p in hull) / len(hull)
+    cy = sum(p[1] for p in hull) / len(hull)
+    expanded = []
+    for x, y in hull:
+        dx, dy = x - cx, y - cy
+        dist = (dx * dx + dy * dy) ** 0.5
+        if dist == 0:
+            expanded.append((x, y))
+        else:
+            scale = (dist + padding) / dist
+            expanded.append((cx + dx * scale, cy + dy * scale))
+    return expanded
+
+
 class Renderer:
     LEGEND_WIDTH = 200
     LEGEND_BG = (36, 36, 36)
@@ -43,7 +82,12 @@ class Renderer:
     DIM_TEXT = (140, 140, 140)
     GRID_COLOR = (200, 200, 200)
     MOL_OUTLINE = (0, 0, 0)
-    ASM_OUTLINE = (218, 165, 32)  # goldenrod
+    ASM_OUTLINE = (255, 220, 0)  # yellow
+    # Fraction of the sprite diameter that a block's actual illustrated
+    # shape should fill, regardless of how much transparent padding the
+    # source PNG has -- keeps donor/acceptor and their assembly variants
+    # visually the same size even if the art files aren't padded the same.
+    SPRITE_CONTENT_FILL = 0.9
 
     def __init__(self, sim_config: SimConfig, gfx: GfxConfig):
         pygame.init()
@@ -62,9 +106,62 @@ class Renderer:
             tuple(gfx.bond_color_strong), tuple(gfx.bond_color_fragile)
         )
         self._bg_surface = self._load_background(gfx)
+        self._break_sprite, self._break_sprite_src = self._load_event_sprite(
+            gfx.break_anim_image, gfx.break_anim_size, "Break", gfx.break_anim_tint)
+        self._form_sprite, self._form_sprite_src = self._load_event_sprite(
+            gfx.form_anim_image, gfx.form_anim_size, "Form", gfx.form_anim_tint)
         self._hbond_sprite_cache: dict[tuple, pygame.Surface | None] = {}
+        self._hbond_mask_cache: dict[tuple, pygame.mask.Mask | None] = {}
+        self._hbond_glow_dot_cache: dict[int, pygame.Surface] = {}
         self.debug_mode = False
         self._stepping = False
+
+    def _load_event_sprite(self, path: Optional[str], size: int, label: str, tint: Optional[list] = None):
+        """Load and scale an event animation sprite (break/form).
+
+        Returns (small_sprite, full_res_source) -- the source is kept around
+        so other consumers (e.g. the legend) can scale directly from full
+        resolution instead of re-scaling the already-tiny animation sprite.
+        Returns (None, None) on failure.
+        """
+        if not path:
+            return None, None
+        if not os.path.exists(path):
+            logger.warning("%s animation image not found: %s", label, path)
+            return None, None
+        try:
+            img = pygame.image.load(path).convert_alpha()
+            if tint:
+                img = self._apply_duotone(img, tint)
+            sprite = pygame.transform.smoothscale(img, (size, size))
+            return sprite, img
+        except pygame.error as e:
+            logger.warning("Failed to load %s animation image %s: %s", label, path, e)
+            return None, None
+
+    def _apply_duotone(self, sprite: pygame.Surface, tint: list) -> pygame.Surface:
+        """Recolor by luminance into a shadow->tint gradient (keeps alpha).
+
+        Unlike a multiply blend, this never crushes dark strokes toward
+        black -- the darkest pixels land on a muted version of the tint
+        instead, so the recolored art still reads as a single hue.
+        """
+        tint = tuple(tint)
+        shadow = tuple(int(c * 0.45) for c in tint)
+        highlight = tuple(int(255 * 0.5 + c * 0.5) for c in tint)
+        out = sprite.copy()
+        w, h = out.get_size()
+        for y in range(h):
+            for x in range(w):
+                r, g, b, a = out.get_at((x, y))
+                if a == 0:
+                    continue
+                lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0
+                new_color = tuple(
+                    int(shadow[i] + (highlight[i] - shadow[i]) * lum) for i in range(3)
+                )
+                out.set_at((x, y), new_color + (a,))
+        return out
 
     def _load_background(self, gfx: GfxConfig):
         """Load and scale the background image if configured. Returns None on failure."""
@@ -80,18 +177,24 @@ class Renderer:
             logger.warning("Failed to load background image %s: %s", gfx.background_image, e)
             return None
 
-    def _get_hbond_sprite(self, is_donor: bool, diameter: int) -> pygame.Surface | None:
+    def _get_hbond_sprite(self, is_donor: bool, diameter: int, in_assembly: bool = False) -> pygame.Surface | None:
         """Load, rotate, and cache the donor/acceptor sprite at a given diameter.
 
         Rotation lets the knob/notch line up with the vertical H-bond axis.
-        Returns None (and caches the miss) if illustrated blocks are off or
-        the file is missing, so callers fall back to the procedural circle.
+        Uses the assembly-variant art (if configured) once a block belongs
+        to an assembly. Returns None (and caches the miss) if illustrated
+        blocks are off or the file is missing, so callers fall back to the
+        procedural circle.
         """
-        key = ("donor" if is_donor else "acceptor", diameter)
+        key = ("donor" if is_donor else "acceptor", diameter, in_assembly)
         if key in self._hbond_sprite_cache:
             return self._hbond_sprite_cache[key]
 
-        path = self.gfx.donor_image if is_donor else self.gfx.acceptor_image
+        path = None
+        if in_assembly:
+            path = self.gfx.donor_assembly_image if is_donor else self.gfx.acceptor_assembly_image
+        if not path:
+            path = self.gfx.donor_image if is_donor else self.gfx.acceptor_image
         rotation = self.gfx.donor_rotation if is_donor else self.gfx.acceptor_rotation
         sprite = None
         if path and os.path.exists(path):
@@ -99,7 +202,7 @@ class Renderer:
                 img = pygame.image.load(path).convert_alpha()
                 if rotation:
                     img = pygame.transform.rotate(img, rotation)
-                sprite = pygame.transform.smoothscale(img, (diameter, diameter))
+                sprite = self._scale_to_content(img, diameter)
             except pygame.error as e:
                 logger.warning("Failed to load %s sprite %s: %s", key[0], path, e)
         elif path:
@@ -107,6 +210,28 @@ class Renderer:
 
         self._hbond_sprite_cache[key] = sprite
         return sprite
+
+    def _scale_to_content(self, img: pygame.Surface, diameter: int) -> pygame.Surface:
+        """Scale so the art's visible shape (not its transparent padding)
+
+        fills a consistent fraction of the diameter. Different source PNGs
+        can have different amounts of padding around the actual drawing;
+        without this, sprites with less padding render visibly larger.
+        """
+        bbox = img.get_bounding_rect()
+        if bbox.width == 0 or bbox.height == 0:
+            return pygame.transform.smoothscale(img, (diameter, diameter))
+
+        content = img.subsurface(bbox).copy()
+        target = diameter * self.SPRITE_CONTENT_FILL
+        scale = target / max(bbox.width, bbox.height)
+        new_w = max(1, int(bbox.width * scale))
+        new_h = max(1, int(bbox.height * scale))
+        scaled_content = pygame.transform.smoothscale(content, (new_w, new_h))
+
+        out = pygame.Surface((diameter, diameter), pygame.SRCALPHA)
+        out.blit(scaled_content, ((diameter - new_w) // 2, (diameter - new_h) // 2))
+        return out
 
     def handle_events(self, state: SimulationState) -> bool:
         """Process input events. Returns False if quit requested."""
@@ -152,15 +277,89 @@ class Renderer:
         # Catalyst zones first (underneath everything)
         self._draw_catalyst_zones(state)
 
-        # Blocks first, bonds on top so they're visible when blocks touch
+        # Blocks first, bonds on top so they're visible when blocks touch.
+        # H-bond slot fill goes *behind* blocks so it only shows through
+        # the gap between the two interlocking sprites (matches legend).
+        self._draw_hbond_slots(state)
         self._draw_blocks(state)
+        self._draw_assembly_outlines(state)
         self._draw_bonds(state)
+        self._draw_break_animations(state)
+        self._draw_form_animations(state)
 
         if self.debug_mode:
             self._draw_debug(state)
 
         self._draw_legend(state)
         pygame.display.flip()
+
+    def _draw_hbond_slots(self, state: SimulationState):
+        """Fill the connection gap between H-bonded pieces with yellow.
+
+        Drawn before the block sprites, so it's only visible through the
+        gap where the donor/acceptor art doesn't quite meet -- same idea
+        as the H-Bond legend icon.
+        """
+        if not (self.gfx.use_illustrated_blocks and self.gfx.block_color_by == "h_bond_type"):
+            return
+        base_diameter = int(self.gfx.block_radius) * 2
+        for bond in state.bonds.values():
+            if not bond.is_h_bond:
+                continue
+            a = state.blocks[bond.block_a_id]
+            b = state.blocks[bond.block_b_id]
+            in_assembly = a.assembly_id is not None or b.assembly_id is not None
+            scale = self.gfx.assembly_overlap_scale if in_assembly else self.gfx.hbond_overlap_scale
+            diameter = int(base_diameter * scale)
+            radius = max(2, diameter // 4)
+            mx = int((a.position.x + b.position.x) / 2)
+            my = int((a.position.y + b.position.y) / 2)
+            pygame.draw.circle(self.screen, self.ASM_OUTLINE, (mx, my), radius)
+
+    def _draw_break_animations(self, state: SimulationState):
+        """Draw an expanding, fading flash at each recent bond-break location."""
+        state.recent_breaks = self._draw_event_animations(
+            state, state.recent_breaks, self._break_sprite,
+            self.gfx.break_anim_duration, self.gfx.break_anim_max_scale,
+            self.gfx.break_anim_max_alpha,
+        )
+
+    def _draw_form_animations(self, state: SimulationState):
+        """Draw an expanding, fading flash at each recent bond-formation location."""
+        state.recent_forms = self._draw_event_animations(
+            state, state.recent_forms, self._form_sprite,
+            self.gfx.form_anim_duration, self.gfx.form_anim_max_scale,
+            self.gfx.form_anim_max_alpha,
+        )
+
+    def _draw_event_animations(
+        self, state: SimulationState, events: list, sprite: pygame.Surface | None,
+        duration: int, max_scale: float, max_alpha: int,
+    ) -> list:
+        """Shared scale+fade animation used for both break and form events."""
+        if sprite is None:
+            return []
+        base_size = sprite.get_width()
+
+        still_active = []
+        for pos, tick_started in events:
+            age = state.tick - tick_started
+            if age >= duration:
+                continue
+            still_active.append((pos, tick_started))
+
+            t = age / duration
+            scale = 1 + t * (max_scale - 1)
+            # Hold full brightness briefly, then fade -- reads as a flash
+            # instead of fading from the very first frame.
+            hold = 0.25
+            alpha = max_alpha if t < hold else int(max_alpha * (1 - (t - hold) / (1 - hold)))
+            size = max(1, int(base_size * scale))
+            frame = pygame.transform.smoothscale(sprite, (size, size))
+            frame.set_alpha(alpha)
+            self.screen.blit(frame, (int(pos.x) - size // 2, int(pos.y) - size // 2))
+
+        return still_active
 
     def _get_assembly_block_positions(self, asm, state: SimulationState) -> list[tuple[int, int]]:
         """Get all block positions in an assembly."""
@@ -177,7 +376,7 @@ class Renderer:
         if not catalytic:
             return
 
-        padding = int(self.sim_config.catalysis_range)
+        padding = int(self.sim_config.catalysis_range * self.gfx.catalysis_zone_visual_scale)
         color = tuple(self.gfx.catalysis_range_color)
         alpha = self.gfx.catalysis_range_alpha
 
@@ -214,7 +413,9 @@ class Renderer:
         r = int(self.gfx.block_radius)
         color_by = self.gfx.block_color_by
         base_diameter = r * 2
+        free_diameter = int(base_diameter * self.gfx.donor_acceptor_scale)
         overlap_diameter = int(base_diameter * self.gfx.hbond_overlap_scale)
+        asm_overlap_diameter = int(base_diameter * self.gfx.assembly_overlap_scale)
 
         hbonded_ids: set[int] = set()
         if self.gfx.use_illustrated_blocks and color_by == "h_bond_type":
@@ -231,8 +432,14 @@ class Renderer:
             sprite = None
             if self.gfx.use_illustrated_blocks and color_by == "h_bond_type":
                 is_donor = block.h_bond_type.value == "donor"
-                diameter = overlap_diameter if block.id in hbonded_ids else base_diameter
-                sprite = self._get_hbond_sprite(is_donor, diameter)
+                in_assembly = block.assembly_id is not None
+                if in_assembly:
+                    diameter = asm_overlap_diameter
+                elif block.id in hbonded_ids:
+                    diameter = overlap_diameter
+                else:
+                    diameter = free_diameter
+                sprite = self._get_hbond_sprite(is_donor, diameter, in_assembly)
 
             if sprite is not None:
                 half = sprite.get_width() // 2
@@ -241,28 +448,131 @@ class Renderer:
                 color = self._get_block_color(block, color_by)
                 pygame.draw.circle(self.screen, color, (x, y), r)
 
-            if self.gfx.block_outline and block.molecule_id is not None:
-                if block.assembly_id is not None:
-                    pygame.draw.circle(self.screen, self.ASM_OUTLINE, (x, y), r + 1, 2)
-                else:
-                    pygame.draw.circle(self.screen, self.MOL_OUTLINE, (x, y), r, 1)
+    def _draw_assembly_outlines(self, state: SimulationState):
+        """Draw a single thin boundary tracing each assembly's actual silhouette.
+
+        Falls back to a padded convex hull of block centers if illustrated
+        sprites aren't in use (nothing to trace a silhouette from).
+        """
+        if not self.gfx.block_outline:
+            return
+
+        color_by = self.gfx.block_color_by
+        use_sprites = self.gfx.use_illustrated_blocks and color_by == "h_bond_type"
+        base_diameter = int(self.gfx.block_radius) * 2
+        asm_overlap_diameter = int(base_diameter * self.gfx.assembly_overlap_scale)
+
+        for asm in state.assemblies.values():
+            block_ids = [bid for mid in asm.molecule_ids for bid in state.molecules[mid].block_ids]
+            if not block_ids:
+                continue
+
+            if use_sprites:
+                self._draw_assembly_silhouette(state, block_ids, asm_overlap_diameter)
+            else:
+                positions = [(int(state.blocks[bid].position.x), int(state.blocks[bid].position.y))
+                             for bid in block_ids]
+                if len(positions) < 3:
+                    continue
+                hull = _convex_hull(positions)
+                if len(hull) < 3:
+                    continue
+                hull = _expand_hull(hull, int(self.gfx.block_radius) + 4)
+                pygame.draw.lines(self.screen, self.ASM_OUTLINE, True, hull, 1)
+
+    def _get_hbond_mask(self, is_donor: bool, diameter: int, in_assembly: bool = False) -> pygame.mask.Mask | None:
+        """Cache the pygame Mask for a donor/acceptor sprite at a given diameter."""
+        key = ("donor" if is_donor else "acceptor", diameter, in_assembly)
+        if key in self._hbond_mask_cache:
+            return self._hbond_mask_cache[key]
+        sprite = self._get_hbond_sprite(is_donor, diameter, in_assembly)
+        mask = pygame.mask.from_surface(sprite) if sprite is not None else None
+        self._hbond_mask_cache[key] = mask
+        return mask
+
+    def _draw_assembly_silhouette(self, state, block_ids, asm_overlap_diameter):
+        """Union each block's sprite mask into one shape and trace its outline.
+
+        Every block here is an assembly member, so all of them use the
+        (smaller) assembly overlap scale rather than the free-H-bond one.
+        """
+        positions = [state.blocks[bid].position for bid in block_ids]
+        pad = asm_overlap_diameter // 2 + 2
+        min_x = int(min(p.x for p in positions)) - pad
+        min_y = int(min(p.y for p in positions)) - pad
+        max_x = int(max(p.x for p in positions)) + pad
+        max_y = int(max(p.y for p in positions)) + pad
+        w, h = max_x - min_x, max_y - min_y
+        if w <= 0 or h <= 0:
+            return
+
+        combined = pygame.mask.Mask((w, h))
+        for bid in block_ids:
+            block = state.blocks[bid]
+            is_donor = block.h_bond_type.value == "donor"
+            mask = self._get_hbond_mask(is_donor, asm_overlap_diameter, True)
+            if mask is None:
+                continue
+            ox = int(block.position.x - asm_overlap_diameter / 2) - min_x
+            oy = int(block.position.y - asm_overlap_diameter / 2) - min_y
+            combined.draw(mask, (ox, oy))
+
+        points = combined.outline()
+        if len(points) < 3:
+            return
+        screen_points = [(px + min_x, py + min_y) for px, py in points]
+        pygame.draw.lines(self.screen, self.ASM_OUTLINE, True, screen_points, 1)
 
     def _draw_bonds(self, state: SimulationState):
         for bond in state.bonds.values():
             a = state.blocks[bond.block_a_id]
             b = state.blocks[bond.block_b_id]
 
+            start = (int(a.position.x), int(a.position.y))
+            end = (int(b.position.x), int(b.position.y))
+
             if bond.is_h_bond:
-                color = (50, 120, 255)
-                width = self.gfx.h_bond_width
+                self._draw_hbond_glow(start, end)
             else:
                 break_prob = (a.breaking_reactivity + b.breaking_reactivity) / 2
                 color = self._bond_color_fn(break_prob)
-                width = self.gfx.bond_width
+                pygame.draw.line(self.screen, color, start, end, self.gfx.bond_width)
 
-            start = (int(a.position.x), int(a.position.y))
-            end = (int(b.position.x), int(b.position.y))
-            pygame.draw.line(self.screen, color, start, end, width)
+    def _get_hbond_glow_dot(self, radius: int) -> pygame.Surface:
+        """Cached soft radial-alpha dot used to build the H-bond glow trail."""
+        dot = self._hbond_glow_dot_cache.get(radius)
+        if dot is not None:
+            return dot
+
+        color = tuple(self.gfx.h_bond_glow_color)
+        max_alpha = self.gfx.h_bond_glow_alpha
+        size = radius * 2
+        dot = pygame.Surface((size, size), pygame.SRCALPHA)
+        for y in range(size):
+            for x in range(size):
+                dist = ((x - radius) ** 2 + (y - radius) ** 2) ** 0.5
+                if dist <= radius:
+                    falloff = 1 - (dist / radius)
+                    dot.set_at((x, y), color + (int(max_alpha * falloff),))
+        self._hbond_glow_dot_cache[radius] = dot
+        return dot
+
+    def _draw_hbond_glow(self, start: tuple, end: tuple):
+        """Soft glow trail along the segment between two H-bonded pieces,
+
+        instead of a hard line -- the shapes themselves show the connection.
+        Uses plain alpha blending (not additive) so the color renders
+        reliably regardless of the display surface's pixel format.
+        """
+        radius = self.gfx.h_bond_glow_radius
+        samples = self.gfx.h_bond_glow_samples
+        dot = self._get_hbond_glow_dot(radius)
+
+        for i in range(samples + 1):
+            t = i / samples
+            x = start[0] + (end[0] - start[0]) * t
+            y = start[1] + (end[1] - start[1]) * t
+            self.screen.blit(dot, (int(x) - radius, int(y) - radius))
 
     def _draw_legend(self, state: SimulationState):
         panel_x = self.sim_width
@@ -288,9 +598,10 @@ class Renderer:
         if color_by == "h_bond_type":
             # Discrete legend instead of gradient
             if self.gfx.use_illustrated_blocks:
+                thumb_d = int(int(self.gfx.block_radius) * 2 * self.gfx.donor_acceptor_scale)
                 items = [
-                    ("Donor", (80, 130, 255), self._get_hbond_sprite(True, int(self.gfx.block_radius) * 2)),
-                    ("Acceptor", (255, 80, 80), self._get_hbond_sprite(False, int(self.gfx.block_radius) * 2)),
+                    ("Donor", (80, 130, 255), self._get_hbond_sprite(True, thumb_d)),
+                    ("Acceptor", (255, 80, 80), self._get_hbond_sprite(False, thumb_d)),
                 ]
             else:
                 items = [
@@ -314,30 +625,56 @@ class Renderer:
         )
         y += 15
 
-        # H-bond swatch
-        hb_label = self.font.render("H-Bond", True, self.TEXT_COLOR)
-        self.screen.blit(hb_label, (panel_x + margin, y))
-        hb_x = panel_x + margin + 60
-        pygame.draw.line(self.screen, (50, 120, 255),
-                         (hb_x, y + 8), (hb_x + 30, y + 8), 1)
-        y += 20
+        # H-bond swatch: show an actual donor/acceptor pair slotted together.
+        # Icons share one center-x (icon_cx) rather than a left edge --
+        # with such different icon sizes, left-aligning them reads as
+        # crooked even though the edges technically line up.
+        gap = 10
+        icon_col_w = 44  # matches the largest icon (Bond Broken)
+        icon_cx = panel_x + margin + icon_col_w // 2
+        text_x = panel_x + margin + icon_col_w + gap
+
+        def _blit_label(text, ty):
+            lbl = self.font.render(text, True, self.TEXT_COLOR)
+            self.screen.blit(lbl, (text_x, ty))
+
+        icon_h = 0
+        if self.gfx.use_illustrated_blocks:
+            hb_overlap_d = int(16 * self.gfx.hbond_overlap_scale)
+            icon_h = self._draw_hbond_legend_icon(icon_cx - hb_overlap_d // 2, y - 4)
+        if icon_h == 0:
+            pygame.draw.line(self.screen, (50, 120, 255),
+                             (icon_cx - 15, y + 8), (icon_cx + 15, y + 8), 1)
+            icon_h = 16
+        _blit_label("H-Bond", y + max(0, icon_h - 14) // 2)
+        y += max(20, icon_h + 6)
 
         # Assembly swatch
-        asm_label = self.font.render("Assembly", True, self.TEXT_COLOR)
-        self.screen.blit(asm_label, (panel_x + margin, y))
-        asm_x = panel_x + margin + 72
-        pygame.draw.circle(self.screen, self.ASM_OUTLINE, (asm_x + 8, y + 8), 8, 2)
+        pygame.draw.circle(self.screen, self.ASM_OUTLINE, (icon_cx, y + 8), 8, 2)
+        _blit_label("Assembly", y)
         y += 20
 
         # Catalytic assembly swatch
         cat_color = tuple(self.gfx.catalysis_range_color)
-        cat_label = self.font.render("Catalytic", True, self.TEXT_COLOR)
-        self.screen.blit(cat_label, (panel_x + margin, y))
-        cat_x = panel_x + margin + 72
-        pygame.draw.circle(self.screen, cat_color, (cat_x + 8, y + 8), 8, 2)
+        pygame.draw.circle(self.screen, cat_color, (icon_cx, y + 8), 8, 2)
         # Small range indicator
-        pygame.draw.circle(self.screen, cat_color, (cat_x + 8, y + 8), 12, 1)
+        pygame.draw.circle(self.screen, cat_color, (icon_cx, y + 8), 12, 1)
+        _blit_label("Catalytic", y)
         y += 25
+
+        # Bond-formed / bond-broken swatches (bigger thumbnail -- detailed
+        # art reads poorly at ~20px regardless of scaling source/quality).
+        # Broken is drawn larger than formed since it's harder to read.
+        for label_text, sprite_src, icon_d in (
+            ("Bond Formed", self._form_sprite_src, 32),
+            ("Bond Broken", self._break_sprite_src, 44),
+        ):
+            if sprite_src is not None:
+                # Scale from the full-res source, not the tiny animation sprite, so it stays crisp.
+                thumb = pygame.transform.smoothscale(sprite_src, (icon_d, icon_d))
+                self.screen.blit(thumb, (icon_cx - icon_d // 2, y))
+            _blit_label(label_text, y + icon_d // 2 - 7)
+            y += icon_d + 4
 
         # Divider
         pygame.draw.line(self.screen, (60, 60, 60),
@@ -540,6 +877,33 @@ class Renderer:
 
         return y + bar_height + 5
 
+    def _draw_hbond_legend_icon(self, x: int, y: int) -> int:
+        """Draw a donor+acceptor pair slotted together, for the H-Bond legend row.
+
+        Returns the pixel height used, or 0 if sprites aren't available
+        (caller falls back to the plain line swatch).
+        """
+        base_d = 16
+        overlap_d = int(base_d * self.gfx.hbond_overlap_scale)
+        donor = self._get_hbond_sprite(True, overlap_d)
+        acceptor = self._get_hbond_sprite(False, overlap_d)
+        if donor is None or acceptor is None:
+            return 0
+
+        spacing = base_d * (self.gfx.bond_length / (int(self.gfx.block_radius) * 2))
+        cx = x + overlap_d // 2
+        cy_top = y + overlap_d // 2
+        cy_bottom = int(cy_top + spacing)
+
+        # Fill the connection slot with yellow (same as the assembly
+        # outline color) behind the sprites, so it reads as "bonded" even
+        # where the art doesn't perfectly meet.
+        pygame.draw.circle(self.screen, self.ASM_OUTLINE, (cx, (cy_top + cy_bottom) // 2), overlap_d // 4)
+
+        self.screen.blit(donor, (cx - overlap_d // 2, cy_top - overlap_d // 2))
+        self.screen.blit(acceptor, (cx - overlap_d // 2, cy_bottom - overlap_d // 2))
+        return (cy_bottom - y) + overlap_d // 2
+
     def _draw_discrete_legend(self, x, y, label, items):
         """Draw a discrete legend (for h_bond_type etc.).
 
@@ -549,16 +913,18 @@ class Renderer:
         text = self.font.render(label, True, self.TEXT_COLOR)
         self.screen.blit(text, (x, y))
         y += 22
-        swatch = 16
+        max_w = max((sprite.get_width() if sprite is not None else 16) for _, _, sprite in items)
         for name, color, sprite in items:
             if sprite is not None:
-                thumb = pygame.transform.smoothscale(sprite, (swatch, swatch))
-                self.screen.blit(thumb, (x + 2, y))
+                # Use the sprite's own size rather than forcing a fixed
+                # swatch -- callers now pre-scale sprites to the size they want.
+                w = sprite.get_width()
+                self.screen.blit(sprite, (x + 2 + (max_w - w) // 2, y + (max_w - w) // 2))
             else:
-                pygame.draw.circle(self.screen, color, (x + 10, y + 6), 6)
-            lbl = self.small_font.render(name, True, self.DIM_TEXT)
-            self.screen.blit(lbl, (x + swatch + 6, y + (swatch - 12) // 2))
-            y += swatch + 4
+                pygame.draw.circle(self.screen, color, (x + 2 + max_w // 2, y + max_w // 2), 6)
+            lbl = self.font.render(name, True, self.DIM_TEXT)
+            self.screen.blit(lbl, (x + max_w + 8, y + (max_w - 14) // 2))
+            y += max_w + 6
         return y + 5
 
     def _draw_debug(self, state: SimulationState):

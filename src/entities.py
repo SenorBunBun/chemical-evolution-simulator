@@ -81,6 +81,12 @@ class SimulationState:
     tick: int = 0
     paused: bool = False
     speed_multiplier: int = 2
+    # (position, tick_broken) for each recent bond break, used to draw a
+    # brief ripple animation. Pruned by the renderer once they expire.
+    recent_breaks: list[tuple[Vector2, int]] = field(default_factory=list)
+    # (position, tick_formed) for each recent bond formation, used to draw a
+    # brief "joining" animation. Pruned by the renderer once they expire.
+    recent_forms: list[tuple[Vector2, int]] = field(default_factory=list)
     history: dict[str, list] = field(default_factory=lambda: {
         "tick": [],
         "num_blocks": [],

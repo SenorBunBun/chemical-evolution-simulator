@@ -151,6 +151,7 @@ def _form_assembly(state: SimulationState, mol_a_id: int, mol_b_id: int, id_gen:
         hbond = Bond(id=id_gen.next(), block_a_id=a_bid, block_b_id=b_bid, is_h_bond=True)
         state.bonds[hbond.id] = hbond
         h_bond_ids.append(hbond.id)
+        _record_bond_formed(state, a_bid, b_bid)
 
     # Combined velocity (weighted by block count)
     n_a, n_b = mol_a.n, mol_b.n
@@ -219,6 +220,7 @@ def _add_to_assembly(
         hbond = Bond(id=id_gen.next(), block_a_id=a_bid, block_b_id=b_bid, is_h_bond=True)
         state.bonds[hbond.id] = hbond
         asm.h_bond_ids.append(hbond.id)
+        _record_bond_formed(state, a_bid, b_bid)
 
     # Set assembly membership
     mol.assembly_id = assembly_id
@@ -756,6 +758,7 @@ def form_bond(state: SimulationState, a_id: int, b_id: int, id_gen: IdGen):
     state.bonds[bond.id] = bond
     state.blocks[a_id].bond_ids.append(bond.id)
     state.blocks[b_id].bond_ids.append(bond.id)
+    _record_bond_formed(state, a_id, b_id)
 
     a_mol = state.blocks[a_id].molecule_id
     b_mol = state.blocks[b_id].molecule_id
@@ -936,11 +939,22 @@ def hydrolysis_step(state: SimulationState, id_gen: IdGen):
             _break_bond(state, bond_id, id_gen)
 
 
+def _record_bond_formed(state: SimulationState, a_id: int, b_id: int):
+    """Record where a new bond just formed, for the brief 'joining' animation."""
+    a = state.blocks[a_id]
+    b = state.blocks[b_id]
+    midpoint = (Vector2(a.position) + Vector2(b.position)) / 2
+    state.recent_forms.append((midpoint, state.tick))
+
+
 def _break_bond(state: SimulationState, bond_id: int, id_gen: IdGen):
     """Remove a bond and split the molecule."""
     bond = state.bonds.pop(bond_id)
     a = state.blocks[bond.block_a_id]
     b = state.blocks[bond.block_b_id]
+
+    midpoint = (Vector2(a.position) + Vector2(b.position)) / 2
+    state.recent_breaks.append((midpoint, state.tick))
 
     a.bond_ids.remove(bond_id)
     b.bond_ids.remove(bond_id)

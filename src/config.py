@@ -81,15 +81,50 @@ class GfxConfig:
     h_bond_width: int = 1
     block_outline: bool = True  # outline on blocks in molecules
 
+    # Soft glow drawn between H-bonded pieces instead of a hard line, since
+    # the donor/acceptor shapes already show the connection.
+    h_bond_glow_color: list[int] = field(default_factory=lambda: [50, 120, 255])  # blue
+    h_bond_glow_radius: int = 4
+    h_bond_glow_alpha: int = 55
+    h_bond_glow_samples: int = 6
+
     # Optional illustrated background image, scaled to fill the window.
     # Falls back to bg_color if the path is None or the file is missing.
     background_image: Optional[str] = None
+
+    # Animation played briefly at the spot a bond breaks. The image is
+    # scaled up and faded out over break_anim_duration ticks.
+    break_anim_image: Optional[str] = None
+    break_anim_duration: int = 20
+    break_anim_size: int = 24
+    break_anim_max_scale: float = 3.0
+    break_anim_max_alpha: int = 255  # cap peak opacity for a more subtle effect
+    # Optional duotone recolor (dark strokes -> muted tint, light areas ->
+    # bright tint) so a break reads as a distinct "warning" cue, separate
+    # from the blue H-bond glow. Baked in once at load time.
+    break_anim_tint: Optional[list[int]] = None
+
+    # Animation played briefly at the spot a new bond forms (covalent or
+    # H-bond), scaled up and faded out over form_anim_duration ticks.
+    form_anim_image: Optional[str] = None
+    form_anim_duration: int = 20
+    form_anim_size: int = 24
+    form_anim_max_scale: float = 3.0
+    form_anim_max_alpha: int = 255
+    form_anim_tint: Optional[list[int]] = None
+
+
 
     # Illustrated donor/acceptor blocks (used only when block_color_by == "h_bond_type").
     # Falls back to the procedural circle if disabled or a file is missing.
     use_illustrated_blocks: bool = False
     donor_image: Optional[str] = None
     acceptor_image: Optional[str] = None
+
+    # Alternate donor/acceptor art used once a block belongs to an assembly.
+    # Falls back to donor_image/acceptor_image if unset or missing.
+    donor_assembly_image: Optional[str] = None
+    acceptor_assembly_image: Optional[str] = None
 
     # Fixed rotation (degrees) applied to each sprite so its knobs/notches
     # line up with the vertical H-bond axis (assemblies only ever stack
@@ -101,9 +136,23 @@ class GfxConfig:
     # H-bond, so its knob visually overlaps into its partner's notch.
     hbond_overlap_scale: float = 1.4
 
+    # Same idea, but for blocks belonging to an assembly -- the assembly
+    # art already has a built-in connection ring, so it needs less (or no)
+    # extra enlargement to still read as overlapping.
+    assembly_overlap_scale: float = 1.4
+
+    # Visual-only enlargement of free (not H-bonded, not in an assembly)
+    # donor/acceptor sprites, purely to reduce the size gap against the
+    # (necessarily larger) assembly/overlap variants -- doesn't touch
+    # block_radius, so physics/collision are unaffected.
+    donor_acceptor_scale: float = 1.2
+
     # Phase 3: Catalysis rendering
     catalysis_range_color: list[int] = field(default_factory=lambda: [0, 200, 0])  # green
     catalysis_range_alpha: int = 30  # transparency for range circle fill
+    # Visual-only scale on the drawn catalytic halo, independent of the
+    # actual sim_config.catalysis_range that affects gameplay.
+    catalysis_zone_visual_scale: float = 0.6
 
 
 def _load_json_filtered(cls, path: str) -> dict:
