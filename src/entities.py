@@ -80,7 +80,7 @@ class SimulationState:
     assemblies: dict[int, Assembly] = field(default_factory=dict)
     tick: int = 0
     paused: bool = False
-    speed_multiplier: int = 2
+    speed_multiplier: int = 1
     # (position, tick_broken) for each recent bond break, used to draw a
     # brief ripple animation. Pruned by the renderer once they expire.
     recent_breaks: list[tuple[Vector2, int]] = field(default_factory=list)
