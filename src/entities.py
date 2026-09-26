@@ -13,6 +13,7 @@ from src.id_gen import IdGen
 class HBondType(Enum):
     DONOR = "donor"
     ACCEPTOR = "acceptor"
+    HYDROPHOBIC = "hydrophobic"
 
 
 @dataclass

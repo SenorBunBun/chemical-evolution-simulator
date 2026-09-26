@@ -64,7 +64,10 @@ def _init_random(state: SimulationState, config: SimConfig, id_gen: IdGen, sim_w
             breaking_reactivity=_sample_clamped_normal(
                 config.breaking_reactivity_mean, config.breaking_reactivity_std
             ),
-            h_bond_type=random.choice([HBondType.DONOR, HBondType.ACCEPTOR]),
+            h_bond_type=random.choices(
+                [HBondType.DONOR, HBondType.ACCEPTOR, HBondType.HYDROPHOBIC],
+                weights=config.h_bond_type_weights,
+            )[0],
             latent_catalytic_potential=_sample_clamped_normal(
                 config.latent_catalytic_mean, config.latent_catalytic_std
             ),

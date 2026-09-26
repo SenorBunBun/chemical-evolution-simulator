@@ -1,6 +1,6 @@
 {
     "window_width": 1100,
-    "window_height": 900,
+    "window_height": 750,
     "target_fps": 60,
     "bg_color": [255, 255, 255],
     "block_radius": 4.0,

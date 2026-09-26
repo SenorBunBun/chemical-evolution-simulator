@@ -1,0 +1,20 @@
+{
+    "assembly_enabled": false,
+    "hydrolysis_interval": 9999,
+    "breaking_reactivity_mean": 0.0,
+    "breaking_reactivity_std": 0.0,
+    "scenario_blocks": [
+        {"position": [150, 375], "mobility": 0.3, "formation_reactivity": 1.0, "breaking_reactivity": 0.0, "h_bond_type": "donor",    "latent_catalytic_potential": 0.5},
+        {"position": [180, 375], "mobility": 0.3, "formation_reactivity": 1.0, "breaking_reactivity": 0.0, "h_bond_type": "acceptor", "latent_catalytic_potential": 0.5},
+        {"position": [210, 375], "mobility": 0.3, "formation_reactivity": 1.0, "breaking_reactivity": 0.0, "h_bond_type": "donor",    "latent_catalytic_potential": 0.5},
+
+        {"position": [450, 390], "mobility": 0.3, "formation_reactivity": 1.0, "breaking_reactivity": 0.0, "h_bond_type": "acceptor", "latent_catalytic_potential": 0.5},
+
+        {"position": [690, 375], "mobility": 0.3, "formation_reactivity": 1.0, "breaking_reactivity": 0.0, "h_bond_type": "donor",    "latent_catalytic_potential": 0.5},
+        {"position": [720, 375], "mobility": 0.3, "formation_reactivity": 1.0, "breaking_reactivity": 0.0, "h_bond_type": "acceptor", "latent_catalytic_potential": 0.5}
+    ],
+    "scenario_molecules": [
+        {"block_indices": [0, 1, 2], "velocity": [2.0, 0.0]},
+        {"block_indices": [4, 5], "velocity": [-2.0, 0.0]}
+    ]
+}

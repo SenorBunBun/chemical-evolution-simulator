@@ -25,6 +25,9 @@ class SimConfig:
     latent_catalytic_mean: float = 0.5
     latent_catalytic_std: float = 0.20
 
+    # H-bond type population weights: [donor, acceptor, hydrophobic]
+    h_bond_type_weights: list[float] = field(default_factory=lambda: [1.0, 1.0, 1.0])
+
     # Phase 2: Assembly
     assembly_enabled: bool = True
     base_assembly_chance: float = 0.3
@@ -46,6 +49,10 @@ class SimConfig:
     headless_max_ticks: int = 250_000
     headless_gather_tick: int = 100
     headless_csv_path: str = "output/headless_results.csv"
+    # Which metrics to log each gather (names resolved via metrics.METRIC_FUNCTIONS)
+    headless_metrics: list[str] = field(
+        default_factory=lambda: ["avg_hydrolytic_resistance", "pct_blocks_in_assemblies"]
+    )
 
     # Scenario mode
     scenario_blocks: Optional[list[dict]] = None

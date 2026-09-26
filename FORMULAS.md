@@ -335,9 +335,9 @@ can_assemble = (
 |----------|------|-------------|
 | `N_a`, `N_b` | int | Block counts of the two colliding molecules |
 | `min_assembly_n` | int | config - minimum molecule size for assembly (default 5) |
-| `full_hbond_match` | bool | Every donor in mol_a pairs with an acceptor in mol_b and vice versa |
+| `full_hbond_match` | bool | Every position in mol_a pairs with a complementary position in mol_b and vice versa |
 
-**H-bond matching:** Walk both molecule chains simultaneously. At each position, check that one block is DONOR and the other is ACCEPTOR. ALL pairs must match (full correspondence). The molecules must have the same N for full matching. **Both forward and reversed alignment** of mol_b are checked — if reversed order matches, mol_b's block_ids are reversed before H-bond creation so donors align spatially with acceptors.
+**H-bond matching:** Walk both molecule chains simultaneously. At each position, check that the two blocks are *complementary*: DONOR pairs with ACCEPTOR, and HYDROPHOBIC pairs with HYDROPHOBIC (same type). A hydrophobic block does NOT pair with a donor or acceptor. ALL pairs must match (full correspondence). The molecules must have the same N for full matching. **Both forward and reversed alignment** of mol_b are checked — if reversed order matches, mol_b's block_ids are reversed before H-bond creation so blocks align spatially with their complements.
 
 **Used in:** `chemistry.handle_collisions()`
 
@@ -561,7 +561,7 @@ color = block_color_low + (block_color_high - block_color_low) * t
 
 **Configurable:** `block_color_low`, `block_color_high`, `block_color_by` in graphics config.
 
-**H-bond type mode:** Discrete colors instead of gradient — Donor = blue (80,130,255), Acceptor = red (255,80,80).
+**H-bond type mode:** Discrete colors instead of gradient — Donor = blue (80,130,255), Acceptor = red (255,80,80), Hydrophobic = brown (150,90,40).
 
 **Used in:** `renderer._get_block_color()`
 

@@ -1,0 +1,9 @@
+formation_reactivity_mean,breaking_reactivity_mean,hydrolysis_interval,mean_pct_in_assemblies,mean_pct_in_catalysts,mean_avg_n,complexity_score,csv_path
+0.8,0.2,250,0.0,0.0,6.1748,6.1748,output/sweep_smoke/runs/f0.80_b0.20_h250.csv
+0.8,0.8,250,0.0,0.0,4.2757,4.2757,output/sweep_smoke/runs/f0.80_b0.80_h250.csv
+0.8,0.2,30,0.0,0.0,3.812,3.812,output/sweep_smoke/runs/f0.80_b0.20_h30.csv
+0.2,0.2,250,0.0,0.0,3.6429,3.6429,output/sweep_smoke/runs/f0.20_b0.20_h250.csv
+0.2,0.2,30,0.0,0.0,2.8809,2.8809,output/sweep_smoke/runs/f0.20_b0.20_h30.csv
+0.2,0.8,250,0.0,0.0,2.8113,2.8113,output/sweep_smoke/runs/f0.20_b0.80_h250.csv
+0.8,0.8,30,0.0,0.0,2.6719,2.6719,output/sweep_smoke/runs/f0.80_b0.80_h30.csv
+0.2,0.8,30,0.0,0.0,2.1184,2.1184,output/sweep_smoke/runs/f0.20_b0.80_h30.csv

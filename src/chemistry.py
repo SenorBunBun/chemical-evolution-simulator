@@ -18,39 +18,50 @@ logger = logging.getLogger(__name__)
 
 # --- H-Bond Matching ---
 
-def _all_opposite(state, a_ids, b_ids) -> bool:
-    """True if every position has opposite H-bond types."""
+def _is_complement(a: HBondType, b: HBondType) -> bool:
+    """True if two H-bond types are complementary.
+
+    Donor pairs with acceptor (either order); hydrophobic pairs with hydrophobic.
+    """
+    if a == HBondType.HYDROPHOBIC or b == HBondType.HYDROPHOBIC:
+        return a == HBondType.HYDROPHOBIC and b == HBondType.HYDROPHOBIC
+    return a != b
+
+
+def _all_complementary(state, a_ids, b_ids) -> bool:
+    """True if every position has complementary H-bond types."""
     return all(
-        state.blocks[a].h_bond_type != state.blocks[b].h_bond_type
+        _is_complement(state.blocks[a].h_bond_type, state.blocks[b].h_bond_type)
         for a, b in zip(a_ids, b_ids)
     )
 
 
 def check_hbond_match(state: SimulationState, mol_a_id: int, mol_b_id: int) -> bool:
-    """Check if two molecules have full donor-acceptor H-bond correspondence.
+    """Check if two molecules have full H-bond correspondence.
 
-    Requires same length and opposite H-bond types at every position.
+    Requires same length and complementary H-bond types at every position
+    (donor-acceptor or hydrophobic-hydrophobic).
     Checks both forward and reversed alignment of mol_b.
     """
     mol_a = state.molecules[mol_a_id]
     mol_b = state.molecules[mol_b_id]
     if mol_a.n != mol_b.n:
         return False
-    if _all_opposite(state, mol_a.block_ids, mol_b.block_ids):
+    if _all_complementary(state, mol_a.block_ids, mol_b.block_ids):
         return True
-    if _all_opposite(state, mol_a.block_ids, list(reversed(mol_b.block_ids))):
+    if _all_complementary(state, mol_a.block_ids, list(reversed(mol_b.block_ids))):
         return True
     return False
 
 
 def _align_for_hbond(state: SimulationState, mol_a: 'Molecule', mol_b: 'Molecule'):
-    """Reverse mol_b's block_ids if needed so positions align donor-to-acceptor.
+    """Reverse mol_b's block_ids if needed so positions align complementarily.
 
     Call this before creating H-bonds between the two molecules.
     """
-    if _all_opposite(state, mol_a.block_ids, mol_b.block_ids):
+    if _all_complementary(state, mol_a.block_ids, mol_b.block_ids):
         return  # already aligned
-    if _all_opposite(state, mol_a.block_ids, list(reversed(mol_b.block_ids))):
+    if _all_complementary(state, mol_a.block_ids, list(reversed(mol_b.block_ids))):
         mol_b.block_ids = list(reversed(mol_b.block_ids))
         mol_b.anchor_block_id = mol_b.block_ids[0]
 

@@ -88,10 +88,10 @@ going on. It accepts exactly one of these five values:
 | `"breaking_reactivity"` | How easily its bonds fall apart |
 | `"mobility"` | How fast it moves |
 | `"latent_catalytic_potential"` | How strongly it catalyzes nearby reactions |
-| `"h_bond_type"` | Its hydrogen-bond type — donor (blue) vs. acceptor (red) |
+| `"h_bond_type"` | Its hydrogen-bond type — donor (blue), acceptor (red), or hydrophobic (brown) |
 
 The first four fade smoothly from `block_color_low` to `block_color_high`. `"h_bond_type"` is the
-odd one out: it's a yes/no property, so it uses two fixed colors and shows a two-swatch legend
+odd one out: it's a categorical property, so it uses three fixed colors and shows a swatch legend
 instead of a gradient.
 
 For example, to color blocks by hydrogen-bond type:
@@ -110,6 +110,7 @@ The ones worth trying first:
 | Setting | What it does |
 |---------|--------------|
 | `num_blocks` | How many blocks to start with (500 by default; lower it if things run slowly) |
+| `h_bond_type_weights` | Relative population of `[donor, acceptor, hydrophobic]` blocks (e.g. `[1, 1, 1]` = equal thirds) |
 | `speed_scale` | How fast blocks move around |
 | `assembly_enabled` | `true` or `false` — whether blocks can assemble into larger structures |
 | `base_assembly_chance` | How likely assembly is when blocks meet |

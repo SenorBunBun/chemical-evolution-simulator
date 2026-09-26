@@ -1,0 +1,25 @@
+{
+    "base_assembly_chance": 1.0,
+    "min_assembly_n": 3,
+    "hydrolysis_interval": 9999,
+    "breaking_reactivity_mean": 0.0,
+    "breaking_reactivity_std": 0.0,
+    "scenario_blocks": [
+        {"position": [180, 300], "mobility": 0.3, "formation_reactivity": 0.0, "breaking_reactivity": 0.0, "h_bond_type": "hydrophobic", "latent_catalytic_potential": 0.5},
+        {"position": [196, 300], "mobility": 0.3, "formation_reactivity": 0.0, "breaking_reactivity": 0.0, "h_bond_type": "donor",       "latent_catalytic_potential": 0.5},
+        {"position": [212, 300], "mobility": 0.3, "formation_reactivity": 0.0, "breaking_reactivity": 0.0, "h_bond_type": "acceptor",    "latent_catalytic_potential": 0.5},
+
+        {"position": [788, 500], "mobility": 0.3, "formation_reactivity": 0.0, "breaking_reactivity": 0.0, "h_bond_type": "hydrophobic", "latent_catalytic_potential": 0.5},
+        {"position": [804, 500], "mobility": 0.3, "formation_reactivity": 0.0, "breaking_reactivity": 0.0, "h_bond_type": "acceptor",    "latent_catalytic_potential": 0.5},
+        {"position": [820, 500], "mobility": 0.3, "formation_reactivity": 0.0, "breaking_reactivity": 0.0, "h_bond_type": "donor",       "latent_catalytic_potential": 0.5},
+
+        {"position": [484, 760], "mobility": 0.3, "formation_reactivity": 0.0, "breaking_reactivity": 0.0, "h_bond_type": "donor",       "latent_catalytic_potential": 0.5},
+        {"position": [500, 760], "mobility": 0.3, "formation_reactivity": 0.0, "breaking_reactivity": 0.0, "h_bond_type": "donor",       "latent_catalytic_potential": 0.5},
+        {"position": [516, 760], "mobility": 0.3, "formation_reactivity": 0.0, "breaking_reactivity": 0.0, "h_bond_type": "acceptor",    "latent_catalytic_potential": 0.5}
+    ],
+    "scenario_molecules": [
+        {"block_indices": [0, 1, 2], "velocity": [2.0, 0.7]},
+        {"block_indices": [3, 4, 5], "velocity": [-2.0, -0.7]},
+        {"block_indices": [6, 7, 8], "velocity": [0.0, -0.5]}
+    ]
+}

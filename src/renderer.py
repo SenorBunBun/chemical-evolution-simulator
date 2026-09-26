@@ -42,7 +42,13 @@ class Renderer:
 
     def __init__(self, sim_config: SimConfig, gfx: GfxConfig):
         pygame.init()
-        self.screen = pygame.display.set_mode((gfx.window_width, gfx.window_height))
+        # SCALED keeps the logical canvas size fixed and letterbox-scales it to the
+        # window/screen (mouse coords are auto-mapped); RESIZABLE + toggle_fullscreen
+        # (F key) allow fullscreen while retaining the canvas dimensions.
+        self.screen = pygame.display.set_mode(
+            (gfx.window_width, gfx.window_height),
+            pygame.SCALED | pygame.RESIZABLE,
+        )
         pygame.display.set_caption("Molecular Evolution Simulator")
         self.font = pygame.font.SysFont("consolas", 14)
         self.small_font = pygame.font.SysFont("consolas", 11)
@@ -78,6 +84,8 @@ class Renderer:
                     state.speed_multiplier = min(32, state.speed_multiplier * 2)
                 elif event.key == pygame.K_DOWN:
                     state.speed_multiplier = max(1, state.speed_multiplier // 2)
+                elif event.key == pygame.K_f:
+                    pygame.display.toggle_fullscreen()
                 elif event.key == pygame.K_d:
                     self.debug_mode = not self.debug_mode
                 elif event.key == pygame.K_r:
@@ -182,6 +190,10 @@ class Renderer:
             b = state.blocks[bond.block_b_id]
 
             if bond.is_h_bond:
+                # Hydrophobic-hydrophobic H-bonds behave like any H-bond but are not drawn.
+                if (a.h_bond_type.value == "hydrophobic"
+                        and b.h_bond_type.value == "hydrophobic"):
+                    continue
                 color = (50, 120, 255)
                 width = self.gfx.h_bond_width
             else:
@@ -218,7 +230,8 @@ class Renderer:
             # Discrete legend instead of gradient
             y = self._draw_discrete_legend(
                 panel_x + margin, y, info[0],
-                [("Donor", (80, 130, 255)), ("Acceptor", (255, 80, 80))]
+                [("Donor", (80, 130, 255)), ("Acceptor", (255, 80, 80)),
+                 ("Hydrophobic", (150, 90, 40))]
             )
         else:
             y = self._draw_gradient_bar(
@@ -505,7 +518,11 @@ class Renderer:
     def _get_block_color(self, block, color_by: str) -> tuple[int, int, int]:
         """Get the color for a block based on the configured color_by property."""
         if color_by == "h_bond_type":
-            return (80, 130, 255) if block.h_bond_type.value == "donor" else (255, 80, 80)
+            return {
+                "donor": (80, 130, 255),
+                "acceptor": (255, 80, 80),
+                "hydrophobic": (150, 90, 40),
+            }.get(block.h_bond_type.value, (150, 90, 40))
         value = getattr(block, color_by, 0.5)
         return self._block_color_fn(value)
 
