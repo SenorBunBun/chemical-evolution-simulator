@@ -93,9 +93,12 @@ class Renderer:
         pygame.init()
         self.screen = pygame.display.set_mode((gfx.window_width, gfx.window_height))
         pygame.display.set_caption("Molecular Evolution Simulator")
-        self.font = pygame.font.SysFont("consolas", 14)
-        self.small_font = pygame.font.SysFont("consolas", 11)
-        self.title_font = pygame.font.SysFont("consolas", 16, bold=True)
+        # Comma-separated list: pygame tries each in order, so this picks a
+        # clean modern sans font on whichever OS the sim runs on.
+        modern_font = "avenirnext,avenir,segoeui,trebuchetms,verdana,tahoma,arial"
+        self.font = pygame.font.SysFont(modern_font, 14)
+        self.small_font = pygame.font.SysFont(modern_font, 11)
+        self.title_font = pygame.font.SysFont(modern_font, 18, bold=True)
         self.sim_width = gfx.window_width - self.LEGEND_WIDTH
         self.sim_config = sim_config
         self.gfx = gfx
@@ -618,9 +621,9 @@ class Renderer:
         y = 15
         margin = 15
 
-        title = self.title_font.render("LEGENDS", True, self.TEXT_COLOR)
-        self.screen.blit(title, (panel_x + margin, y))
-        y += 30
+        title = self.title_font.render("LEGEND", True, self.TEXT_COLOR)
+        self.screen.blit(title, (panel_x + (panel_w - title.get_width()) // 2, y))
+        y += 42
 
         # Block color gradient (matches block_color_by)
         color_by = self.gfx.block_color_by
@@ -716,7 +719,7 @@ class Renderer:
         # Assembly swatch
         pygame.draw.circle(self.screen, self.ASM_OUTLINE, (icon_cx, y + 8), 8, 2)
         _blit_label("Assembly", y)
-        y += 20
+        y += 36
 
         # Catalytic assembly swatch
         cat_color = tuple(self.gfx.catalysis_range_color)
@@ -724,7 +727,7 @@ class Renderer:
         # Small range indicator
         pygame.draw.circle(self.screen, cat_color, (icon_cx, y + 8), 12, 1)
         _blit_label("Catalytic", y)
-        y += 25
+        y += 36
 
         # Divider
         pygame.draw.line(self.screen, (60, 60, 60),
@@ -733,7 +736,7 @@ class Renderer:
 
         # Stats
         stats_title = self.font.render("STATS", True, self.TEXT_COLOR)
-        self.screen.blit(stats_title, (panel_x + margin, y))
+        self.screen.blit(stats_title, (panel_x + (panel_w - stats_title.get_width()) // 2, y))
         y += 22
 
         # Count bond types
@@ -799,7 +802,7 @@ class Renderer:
         if self.debug_mode:
             y += 10
             debug_label = self.font.render("DEBUG STATS", True, (255, 200, 80))
-            self.screen.blit(debug_label, (panel_x + margin, y))
+            self.screen.blit(debug_label, (panel_x + (panel_w - debug_label.get_width()) // 2, y))
             y += 20
 
             mols = list(state.molecules.values())
@@ -884,7 +887,7 @@ class Renderer:
 
         # Controls
         controls_title = self.font.render("CONTROLS", True, self.TEXT_COLOR)
-        self.screen.blit(controls_title, (panel_x + margin, y))
+        self.screen.blit(controls_title, (panel_x + (panel_w - controls_title.get_width()) // 2, y))
         y += 22
 
         paused_str = "PAUSED" if state.paused else "RUNNING"
@@ -966,21 +969,19 @@ class Renderer:
         Returns (switch_rect, pixel_height_used). The switch rect is what
         handle_events() hit-tests clicks against.
         """
-        line1 = self.small_font.render("Show bond form/break", True, self.TEXT_COLOR)
+        line1 = self.small_font.render("Show bond form / break", True, self.TEXT_COLOR)
         self.screen.blit(line1, (x, y))
-        line2_y = y + 16
-        line2 = self.small_font.render("animation", True, self.TEXT_COLOR)
-        self.screen.blit(line2, (x, line2_y))
+        sw_y = y + 20
 
         sw_w, sw_h = 34, 16
-        sw_rect = pygame.Rect(x + width - sw_w, line2_y - 1, sw_w, sw_h)
+        sw_rect = pygame.Rect(x + width - sw_w, sw_y, sw_w, sw_h)
         track_color = (40, 160, 90) if on else (90, 90, 90)
         pygame.draw.rect(self.screen, track_color, sw_rect, border_radius=sw_h // 2)
         knob_r = sw_h // 2 - 2
         knob_x = sw_rect.right - knob_r - 2 if on else sw_rect.left + knob_r + 2
         pygame.draw.circle(self.screen, (235, 235, 235), (knob_x, sw_rect.centery), knob_r)
 
-        return sw_rect, (sw_h + 16 + 10)
+        return sw_rect, (sw_h + 20 + 10)
 
     def _draw_discrete_legend(self, x, y, label, items):
         """Draw a discrete legend (for h_bond_type etc.).
