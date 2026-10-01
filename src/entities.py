@@ -87,6 +87,9 @@ class SimulationState:
     # (position, tick_formed) for each recent bond formation, used to draw a
     # brief "joining" animation. Pruned by the renderer once they expire.
     recent_forms: list[tuple[Vector2, int]] = field(default_factory=list)
+    # User-toggleable (key 'A'): whether bond-form/break animations are
+    # recorded/shown at all.
+    show_bond_animations: bool = True
     history: dict[str, list] = field(default_factory=lambda: {
         "tick": [],
         "num_blocks": [],

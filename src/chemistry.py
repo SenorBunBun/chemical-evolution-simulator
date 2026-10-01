@@ -147,11 +147,12 @@ def _form_assembly(state: SimulationState, mol_a_id: int, mol_b_id: int, id_gen:
 
     # Create H-bonds between corresponding block pairs
     h_bond_ids = []
+    combined_size = mol_a.n + mol_b.n
     for a_bid, b_bid in zip(mol_a.block_ids, mol_b.block_ids):
         hbond = Bond(id=id_gen.next(), block_a_id=a_bid, block_b_id=b_bid, is_h_bond=True)
         state.bonds[hbond.id] = hbond
         h_bond_ids.append(hbond.id)
-        _record_bond_formed(state, a_bid, b_bid)
+        _record_bond_formed(state, a_bid, b_bid, combined_size)
 
     # Combined velocity (weighted by block count)
     n_a, n_b = mol_a.n, mol_b.n
@@ -216,11 +217,12 @@ def _add_to_assembly(
     asm.molecule_ids.append(mol_id)
 
     # Create H-bonds between neighbor and new molecule
+    combined_size = sum(state.molecules[mid].n for mid in asm.molecule_ids)
     for a_bid, b_bid in zip(neighbor_mol.block_ids, mol.block_ids):
         hbond = Bond(id=id_gen.next(), block_a_id=a_bid, block_b_id=b_bid, is_h_bond=True)
         state.bonds[hbond.id] = hbond
         asm.h_bond_ids.append(hbond.id)
-        _record_bond_formed(state, a_bid, b_bid)
+        _record_bond_formed(state, a_bid, b_bid, combined_size)
 
     # Set assembly membership
     mol.assembly_id = assembly_id
@@ -758,7 +760,6 @@ def form_bond(state: SimulationState, a_id: int, b_id: int, id_gen: IdGen):
     state.bonds[bond.id] = bond
     state.blocks[a_id].bond_ids.append(bond.id)
     state.blocks[b_id].bond_ids.append(bond.id)
-    _record_bond_formed(state, a_id, b_id)
 
     a_mol = state.blocks[a_id].molecule_id
     b_mol = state.blocks[b_id].molecule_id
@@ -771,6 +772,10 @@ def form_bond(state: SimulationState, a_id: int, b_id: int, id_gen: IdGen):
         _add_block_to_molecule(state, b_id, a_mol, a_id)
     else:
         _merge_molecules(state, a_mol, b_mol, a_id, b_id, id_gen)
+
+    final_mol_id = state.blocks[a_id].molecule_id
+    molecule_size = state.molecules[final_mol_id].n if final_mol_id is not None else 2
+    _record_bond_formed(state, a_id, b_id, molecule_size)
 
 
 def _create_molecule_from_pair(state: SimulationState, a_id: int, b_id: int, id_gen: IdGen):
@@ -939,8 +944,14 @@ def hydrolysis_step(state: SimulationState, id_gen: IdGen):
             _break_bond(state, bond_id, id_gen)
 
 
-def _record_bond_formed(state: SimulationState, a_id: int, b_id: int):
-    """Record where a new bond just formed, for the brief 'joining' animation."""
+def _record_bond_formed(state: SimulationState, a_id: int, b_id: int, molecule_size: int):
+    """Record where a new bond just formed, for the brief 'joining' animation.
+
+    Skipped entirely if animations are toggled off, or if the resulting
+    molecule is too small to matter visually (reduces clutter).
+    """
+    if not state.show_bond_animations or molecule_size <= state.gfx.animated_molecule_min_n:
+        return
     a = state.blocks[a_id]
     b = state.blocks[b_id]
     midpoint = (Vector2(a.position) + Vector2(b.position)) / 2
@@ -953,13 +964,15 @@ def _break_bond(state: SimulationState, bond_id: int, id_gen: IdGen):
     a = state.blocks[bond.block_a_id]
     b = state.blocks[bond.block_b_id]
 
-    midpoint = (Vector2(a.position) + Vector2(b.position)) / 2
-    state.recent_breaks.append((midpoint, state.tick))
+    mol_id = a.molecule_id
+    molecule_size = state.molecules[mol_id].n if mol_id is not None else 2
+    if state.show_bond_animations and molecule_size > state.gfx.animated_molecule_min_n:
+        midpoint = (Vector2(a.position) + Vector2(b.position)) / 2
+        state.recent_breaks.append((midpoint, state.tick))
 
     a.bond_ids.remove(bond_id)
     b.bond_ids.remove(bond_id)
 
-    mol_id = a.molecule_id
     if mol_id is None:
         return
 

@@ -113,6 +113,10 @@ class GfxConfig:
     form_anim_max_alpha: int = 255
     form_anim_tint: Optional[list[int]] = None
 
+    # Bond-form/break animations are only recorded for molecules bigger
+    # than this (reduces visual clutter from small/insignificant events).
+    # Toggled on/off entirely via SimulationState.show_bond_animations (key 'A').
+    animated_molecule_min_n: int = 5
 
 
     # Illustrated donor/acceptor blocks (used only when block_color_by == "h_bond_type").

@@ -82,7 +82,7 @@ def main():
         print(f"Sim config: {sim_path}")
     if gfx_path:
         print(f"Gfx config: {gfx_path}")
-    print("Press SPACE to pause, D for debug, UP/DOWN for speed, ESC to quit")
+    print("Press SPACE to pause, D for debug, A to toggle bond animations, UP/DOWN for speed, ESC to quit")
 
     running = True
     while running:

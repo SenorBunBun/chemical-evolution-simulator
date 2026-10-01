@@ -278,6 +278,9 @@ class Renderer:
                     state.speed_multiplier = max(1, state.speed_multiplier // 2)
                 elif event.key == pygame.K_d:
                     self.debug_mode = not self.debug_mode
+                elif event.key == pygame.K_a:
+                    state.show_bond_animations = not state.show_bond_animations
+                    print(f"Bond animations: {'ON' if state.show_bond_animations else 'OFF'}")
                 elif event.key == pygame.K_r:
                     state._reset_requested = True
 
