@@ -39,8 +39,8 @@
     "acceptor_image": "assets/acceptor.png",
     "donor_assembly_image": "assets/donor_assembly.png",
     "acceptor_assembly_image": "assets/acceptor_assembly.png",
-    "donor_tint": [10, 135, 228],
-    "acceptor_tint": [255, 45, 80],
+    "donor_tint": [14, 86, 242],
+    "acceptor_tint": [255, 20, 146],
     "sprite_outline_color": [20, 20, 30],
     "sprite_outline_width": 2,
 
