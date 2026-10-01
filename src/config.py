@@ -132,6 +132,13 @@ class GfxConfig:
     donor_tint: Optional[list[int]] = None
     acceptor_tint: Optional[list[int]] = None
 
+    # Optional dark outline drawn around each donor/acceptor sprite's
+    # silhouette, so flat-colored shapes pop more against the background
+    # instead of looking dull/washed out.
+    sprite_outline_color: Optional[list[int]] = None
+    sprite_outline_width: int = 2
+
+
     # Fixed rotation (degrees) applied to each sprite so its knobs/notches
     # line up with the vertical H-bond axis (assemblies only ever stack
     # vertically -- rigid bodies translate but never rotate).

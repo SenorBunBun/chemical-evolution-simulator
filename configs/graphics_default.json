@@ -41,6 +41,8 @@
     "acceptor_assembly_image": "assets/acceptor_assembly.png",
     "donor_tint": [10, 135, 228],
     "acceptor_tint": [255, 45, 80],
+    "sprite_outline_color": [20, 20, 30],
+    "sprite_outline_width": 2,
 
     "catalysis_range_color": [0, 200, 0],
     "catalysis_range_alpha": 30

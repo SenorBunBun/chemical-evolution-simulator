@@ -147,8 +147,8 @@ class Renderer:
         instead, so the recolored art still reads as a single hue.
         """
         tint = tuple(tint)
-        shadow = tuple(int(c * 0.65) for c in tint)
-        highlight = tuple(min(255, int(255 * 0.25 + c * 0.75)) for c in tint)
+        shadow = tuple(int(c * 0.72) for c in tint)
+        highlight = tuple(min(255, int(255 * 0.22 + c * 0.78)) for c in tint)
         out = sprite.copy()
         w, h = out.get_size()
         for y in range(h):
@@ -206,6 +206,8 @@ class Renderer:
                 if tint:
                     img = self._apply_duotone(img, tint)
                 sprite = self._scale_to_content(img, diameter)
+                if self.gfx.sprite_outline_color:
+                    sprite = self._add_outline(sprite, self.gfx.sprite_outline_color, self.gfx.sprite_outline_width)
             except pygame.error as e:
                 logger.warning("Failed to load %s sprite %s: %s", key[0], path, e)
         elif path:
@@ -234,6 +236,25 @@ class Renderer:
 
         out = pygame.Surface((diameter, diameter), pygame.SRCALPHA)
         out.blit(scaled_content, ((diameter - new_w) // 2, (diameter - new_h) // 2))
+        return out
+
+    def _add_outline(self, sprite: pygame.Surface, color: list, width: int) -> pygame.Surface:
+        """Draw a solid-color outline around a sprite's silhouette.
+
+        Approximates dilation by stamping the silhouette at several offsets
+        around a circle of the given width, then drawing the original
+        sprite on top -- cheap, and only runs once per cached sprite.
+        """
+        w, h = sprite.get_size()
+        mask = pygame.mask.from_surface(sprite)
+        silhouette = mask.to_surface(setcolor=tuple(color) + (255,), unsetcolor=(0, 0, 0, 0))
+
+        out = pygame.Surface((w, h), pygame.SRCALPHA)
+        for dx in range(-width, width + 1):
+            for dy in range(-width, width + 1):
+                if dx * dx + dy * dy <= width * width:
+                    out.blit(silhouette, (dx, dy))
+        out.blit(sprite, (0, 0))
         return out
 
     def handle_events(self, state: SimulationState) -> bool:
