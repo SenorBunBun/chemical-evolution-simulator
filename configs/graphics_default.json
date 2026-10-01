@@ -25,7 +25,7 @@
     "break_anim_size": 24,
     "break_anim_max_scale": 1.6,
     "break_anim_max_alpha": 190,
-    "break_anim_tint": null,
+    "break_anim_tint": [255, 130, 0],
 
     "form_anim_image": "assets/ripple_lighter.png",
     "form_anim_duration": 30,
