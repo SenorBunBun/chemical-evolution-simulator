@@ -147,8 +147,8 @@ class Renderer:
         instead, so the recolored art still reads as a single hue.
         """
         tint = tuple(tint)
-        shadow = tuple(int(c * 0.6) for c in tint)
-        highlight = tuple(min(255, int(255 * 0.3 + c * 0.7)) for c in tint)
+        shadow = tuple(int(c * 0.65) for c in tint)
+        highlight = tuple(min(255, int(255 * 0.25 + c * 0.75)) for c in tint)
         out = sprite.copy()
         w, h = out.get_size()
         for y in range(h):
