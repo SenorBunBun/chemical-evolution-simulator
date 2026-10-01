@@ -126,6 +126,12 @@ class GfxConfig:
     donor_assembly_image: Optional[str] = None
     acceptor_assembly_image: Optional[str] = None
 
+    # Optional duotone recolor (same technique as break/form anim tints) so
+    # donor/acceptor read as more visually distinct/contrasting at a
+    # distance, independent of the source art's original coloring.
+    donor_tint: Optional[list[int]] = None
+    acceptor_tint: Optional[list[int]] = None
+
     # Fixed rotation (degrees) applied to each sprite so its knobs/notches
     # line up with the vertical H-bond axis (assemblies only ever stack
     # vertically -- rigid bodies translate but never rotate).

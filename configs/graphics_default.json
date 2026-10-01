@@ -2,8 +2,8 @@
     "window_width": 1100,
     "window_height": 900,
     "target_fps": 60,
-    "bg_color": [255, 255, 255],
-    "background_image": "assets/background.png",
+    "bg_color": [214, 232, 247],
+    "background_image": null,
     "block_radius": 9.0,
     "bond_length": 18.0,
     "block_color_by": "h_bond_type",
@@ -39,6 +39,8 @@
     "acceptor_image": "assets/acceptor.png",
     "donor_assembly_image": "assets/donor_assembly.png",
     "acceptor_assembly_image": "assets/acceptor_assembly.png",
+    "donor_tint": [20, 90, 230],
+    "acceptor_tint": [230, 30, 30],
 
     "catalysis_range_color": [0, 200, 0],
     "catalysis_range_alpha": 30

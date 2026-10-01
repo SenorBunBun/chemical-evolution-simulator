@@ -196,12 +196,15 @@ class Renderer:
         if not path:
             path = self.gfx.donor_image if is_donor else self.gfx.acceptor_image
         rotation = self.gfx.donor_rotation if is_donor else self.gfx.acceptor_rotation
+        tint = self.gfx.donor_tint if is_donor else self.gfx.acceptor_tint
         sprite = None
         if path and os.path.exists(path):
             try:
                 img = pygame.image.load(path).convert_alpha()
                 if rotation:
                     img = pygame.transform.rotate(img, rotation)
+                if tint:
+                    img = self._apply_duotone(img, tint)
                 sprite = self._scale_to_content(img, diameter)
             except pygame.error as e:
                 logger.warning("Failed to load %s sprite %s: %s", key[0], path, e)
