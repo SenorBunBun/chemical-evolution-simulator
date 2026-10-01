@@ -902,6 +902,11 @@ class Renderer:
 
         self.screen.blit(donor, (cx - overlap_d // 2, cy_top - overlap_d // 2))
         self.screen.blit(acceptor, (cx - overlap_d // 2, cy_bottom - overlap_d // 2))
+
+        # Same subtle blue glow used for real H-bonds in the sim, drawn on
+        # top of the sprites just like the live rendering does.
+        self._draw_hbond_glow((cx, cy_top), (cx, cy_bottom))
+
         return (cy_bottom - y) + overlap_d // 2
 
     def _draw_discrete_legend(self, x, y, label, items):
