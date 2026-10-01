@@ -680,30 +680,18 @@ class Renderer:
         _blit_label("H-Bond", y + max(0, icon_h - 14) // 2)
         y += max(20, icon_h + 6)
 
-        # Assembly swatch
-        pygame.draw.circle(self.screen, self.ASM_OUTLINE, (icon_cx, y + 8), 8, 2)
-        _blit_label("Assembly", y)
-        y += 20
+        # --- Divider: everything above is H-bond related ---
+        y += 6
+        pygame.draw.line(self.screen, (60, 60, 60),
+                         (panel_x + margin, y), (panel_x + panel_w - margin, y), 1)
+        y += 15
 
-        # Catalytic assembly swatch
-        cat_color = tuple(self.gfx.catalysis_range_color)
-        pygame.draw.circle(self.screen, cat_color, (icon_cx, y + 8), 8, 2)
-        # Small range indicator
-        pygame.draw.circle(self.screen, cat_color, (icon_cx, y + 8), 12, 1)
-        _blit_label("Catalytic", y)
-        y += 25
-
-        # Clickable toggle (also bound to the 'A' key), placed directly
+        # Clickable toggle switch (also bound to the 'A' key), directly
         # above the bond-formed/broken symbols it controls.
         on = state.show_bond_animations
-        btn_rect = pygame.Rect(panel_x + margin, y, panel_w - 2 * margin, 24)
-        pygame.draw.rect(self.screen, (40, 120, 70) if on else (90, 45, 45), btn_rect, border_radius=4)
-        pygame.draw.rect(self.screen, (200, 200, 200), btn_rect, 1, border_radius=4)
-        btn_label = self.small_font.render(
-            f"Formation/Breakage: {'ON' if on else 'OFF'}", True, self.TEXT_COLOR)
-        self.screen.blit(btn_label, btn_label.get_rect(center=btn_rect.center))
-        self._anim_toggle_rect = btn_rect
-        y += btn_rect.height + 8
+        self._anim_toggle_rect, toggle_h = self._draw_bond_anim_toggle(
+            panel_x + margin, y, panel_w - 2 * margin, on)
+        y += toggle_h
 
         # Bond-formed / bond-broken swatches (bigger thumbnail -- detailed
         # art reads poorly at ~20px regardless of scaling source/quality).
@@ -718,6 +706,25 @@ class Renderer:
                 self.screen.blit(thumb, (icon_cx - icon_d // 2, y))
             _blit_label(label_text, y + icon_d // 2 - 7)
             y += icon_d + 4
+
+        # --- Divider: bond formation/breakage section ends ---
+        y += 6
+        pygame.draw.line(self.screen, (60, 60, 60),
+                         (panel_x + margin, y), (panel_x + panel_w - margin, y), 1)
+        y += 15
+
+        # Assembly swatch
+        pygame.draw.circle(self.screen, self.ASM_OUTLINE, (icon_cx, y + 8), 8, 2)
+        _blit_label("Assembly", y)
+        y += 20
+
+        # Catalytic assembly swatch
+        cat_color = tuple(self.gfx.catalysis_range_color)
+        pygame.draw.circle(self.screen, cat_color, (icon_cx, y + 8), 8, 2)
+        # Small range indicator
+        pygame.draw.circle(self.screen, cat_color, (icon_cx, y + 8), 12, 1)
+        _blit_label("Catalytic", y)
+        y += 25
 
         # Divider
         pygame.draw.line(self.screen, (60, 60, 60),
@@ -952,6 +959,28 @@ class Renderer:
         self._draw_hbond_glow((cx, cy_top), (cx, cy_bottom))
 
         return (cy_bottom - y) + overlap_d // 2
+
+    def _draw_bond_anim_toggle(self, x: int, y: int, width: int, on: bool) -> tuple[pygame.Rect, int]:
+        """Draw a label over an iOS-style switch, right-aligned for clarity.
+
+        Returns (switch_rect, pixel_height_used). The switch rect is what
+        handle_events() hit-tests clicks against.
+        """
+        line1 = self.small_font.render("Show bond form/break", True, self.TEXT_COLOR)
+        self.screen.blit(line1, (x, y))
+        line2_y = y + 16
+        line2 = self.small_font.render("animation", True, self.TEXT_COLOR)
+        self.screen.blit(line2, (x, line2_y))
+
+        sw_w, sw_h = 34, 16
+        sw_rect = pygame.Rect(x + width - sw_w, line2_y - 1, sw_w, sw_h)
+        track_color = (40, 160, 90) if on else (90, 90, 90)
+        pygame.draw.rect(self.screen, track_color, sw_rect, border_radius=sw_h // 2)
+        knob_r = sw_h // 2 - 2
+        knob_x = sw_rect.right - knob_r - 2 if on else sw_rect.left + knob_r + 2
+        pygame.draw.circle(self.screen, (235, 235, 235), (knob_x, sw_rect.centery), knob_r)
+
+        return sw_rect, (sw_h + 16 + 10)
 
     def _draw_discrete_legend(self, x, y, label, items):
         """Draw a discrete legend (for h_bond_type etc.).
