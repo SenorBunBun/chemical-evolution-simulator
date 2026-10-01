@@ -113,6 +113,7 @@ class Renderer:
         self._hbond_sprite_cache: dict[tuple, pygame.Surface | None] = {}
         self._hbond_mask_cache: dict[tuple, pygame.mask.Mask | None] = {}
         self._hbond_glow_dot_cache: dict[int, pygame.Surface] = {}
+        self._anim_toggle_rect: pygame.Rect | None = None
         self.debug_mode = False
         self._stepping = False
 
@@ -284,9 +285,12 @@ class Renderer:
                 elif event.key == pygame.K_r:
                     state._reset_requested = True
 
-            if (event.type == pygame.MOUSEBUTTONDOWN
-                    and state.paused and self.debug_mode):
-                self._inspect_click(state, event.pos)
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if self._anim_toggle_rect and self._anim_toggle_rect.collidepoint(event.pos):
+                    state.show_bond_animations = not state.show_bond_animations
+                    print(f"Bond animations: {'ON' if state.show_bond_animations else 'OFF'}")
+                elif state.paused and self.debug_mode:
+                    self._inspect_click(state, event.pos)
 
         return True
 
@@ -618,6 +622,16 @@ class Renderer:
         self.screen.blit(title, (panel_x + margin, y))
         y += 30
 
+        # Clickable bond-animation toggle (also bound to the 'A' key)
+        on = state.show_bond_animations
+        btn_rect = pygame.Rect(panel_x + margin, y, panel_w - 2 * margin, 24)
+        pygame.draw.rect(self.screen, (40, 120, 70) if on else (90, 45, 45), btn_rect, border_radius=4)
+        pygame.draw.rect(self.screen, (200, 200, 200), btn_rect, 1, border_radius=4)
+        btn_label = self.font.render(f"Animations: {'ON' if on else 'OFF'}", True, self.TEXT_COLOR)
+        self.screen.blit(btn_label, btn_label.get_rect(center=btn_rect.center))
+        self._anim_toggle_rect = btn_rect
+        y += btn_rect.height + 14
+
         # Block color gradient (matches block_color_by)
         color_by = self.gfx.block_color_by
         info = COLOR_BY_INFO.get(color_by, (color_by, "0.0", "1.0"))
@@ -875,6 +889,7 @@ class Renderer:
             "UP/DN: speed +/-",
             "R: reset",
             "D: debug overlay",
+            "A: toggle animations",
             "ESC: quit",
         ]
         for line in controls:
