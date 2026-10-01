@@ -333,7 +333,7 @@ class Renderer:
         in_assembly = a.assembly_id is not None or b.assembly_id is not None
         scale = self.gfx.assembly_overlap_scale if in_assembly else self.gfx.hbond_overlap_scale
         diameter = int(base_diameter * scale)
-        return max(2, diameter // 4)
+        return max(2, diameter // 8)
 
     def _draw_break_animations(self, state: SimulationState):
         """Draw an expanding, fading flash at each recent bond-break location."""
@@ -945,7 +945,7 @@ class Renderer:
         # Fill the connection slot with yellow (same as the assembly
         # outline color) behind the sprites, so it reads as "bonded" even
         # where the art doesn't perfectly meet.
-        pygame.draw.circle(self.screen, self.ASM_OUTLINE, (cx, (cy_top + cy_bottom) // 2), overlap_d // 4)
+        pygame.draw.circle(self.screen, self.ASM_OUTLINE, (cx, (cy_top + cy_bottom) // 2), overlap_d // 8)
 
         self.screen.blit(donor, (cx - overlap_d // 2, cy_top - overlap_d // 2))
         self.screen.blit(acceptor, (cx - overlap_d // 2, cy_bottom - overlap_d // 2))
