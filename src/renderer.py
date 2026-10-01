@@ -312,9 +312,6 @@ class Renderer:
         self._draw_catalyst_zones(state)
 
         # Blocks first, bonds on top so they're visible when blocks touch.
-        # H-bond slot fill goes *behind* blocks so it only shows through
-        # the gap between the two interlocking sprites (matches legend).
-        self._draw_hbond_slots(state)
         self._draw_blocks(state)
         self._draw_assembly_outlines(state)
         self._draw_bonds(state)
@@ -327,28 +324,16 @@ class Renderer:
         self._draw_legend(state)
         pygame.display.flip()
 
-    def _draw_hbond_slots(self, state: SimulationState):
-        """Fill the connection gap between H-bonded pieces with yellow.
+    def _hbond_slot_radius(self, a, b) -> int:
+        """Radius of the yellow 'slot fill' dot for an H-bonded pair,
 
-        Drawn before the block sprites, so it's only visible through the
-        gap where the donor/acceptor art doesn't quite meet -- same idea
-        as the H-Bond legend icon.
+        matching whichever overlap scale their sprites are drawn at.
         """
-        if not (self.gfx.use_illustrated_blocks and self.gfx.block_color_by == "h_bond_type"):
-            return
         base_diameter = int(self.gfx.block_radius) * 2
-        for bond in state.bonds.values():
-            if not bond.is_h_bond:
-                continue
-            a = state.blocks[bond.block_a_id]
-            b = state.blocks[bond.block_b_id]
-            in_assembly = a.assembly_id is not None or b.assembly_id is not None
-            scale = self.gfx.assembly_overlap_scale if in_assembly else self.gfx.hbond_overlap_scale
-            diameter = int(base_diameter * scale)
-            radius = max(2, diameter // 4)
-            mx = int((a.position.x + b.position.x) / 2)
-            my = int((a.position.y + b.position.y) / 2)
-            pygame.draw.circle(self.screen, self.ASM_OUTLINE, (mx, my), radius)
+        in_assembly = a.assembly_id is not None or b.assembly_id is not None
+        scale = self.gfx.assembly_overlap_scale if in_assembly else self.gfx.hbond_overlap_scale
+        diameter = int(base_diameter * scale)
+        return max(2, diameter // 4)
 
     def _draw_break_animations(self, state: SimulationState):
         """Draw an expanding, fading flash at each recent bond-break location."""
@@ -558,6 +543,7 @@ class Renderer:
         pygame.draw.lines(self.screen, self.ASM_OUTLINE, True, screen_points, 1)
 
     def _draw_bonds(self, state: SimulationState):
+        show_slots = self.gfx.use_illustrated_blocks and self.gfx.block_color_by == "h_bond_type"
         for bond in state.bonds.values():
             a = state.blocks[bond.block_a_id]
             b = state.blocks[bond.block_b_id]
@@ -566,6 +552,13 @@ class Renderer:
             end = (int(b.position.x), int(b.position.y))
 
             if bond.is_h_bond:
+                if show_slots:
+                    # Yellow 'slot fill' drawn on top of the blocks so it's
+                    # always visible, even when densely packed neighbors
+                    # would otherwise hide it if drawn underneath.
+                    mx = (start[0] + end[0]) // 2
+                    my = (start[1] + end[1]) // 2
+                    pygame.draw.circle(self.screen, self.ASM_OUTLINE, (mx, my), self._hbond_slot_radius(a, b))
                 self._draw_hbond_glow(start, end)
             else:
                 break_prob = (a.breaking_reactivity + b.breaking_reactivity) / 2
