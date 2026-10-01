@@ -41,6 +41,7 @@
     "acceptor_assembly_image": "assets/acceptor_assembly.png",
     "donor_tint": [14, 86, 242],
     "acceptor_tint": [255, 20, 146],
+    "sprite_tint_opacity": 0.75,
     "sprite_outline_color": null,
     "sprite_outline_width": 2,
 

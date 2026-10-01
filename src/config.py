@@ -135,6 +135,11 @@ class GfxConfig:
     # distance, independent of the source art's original coloring.
     donor_tint: Optional[list[int]] = None
     acceptor_tint: Optional[list[int]] = None
+    # Blend factor for all duotone tints above (donor/acceptor/break/form):
+    # 1.0 = fully replace colors with the tint gradient; lower values blend
+    # back toward the original art so its own dark outline/linework still
+    # shows through instead of being flattened into the tint.
+    sprite_tint_opacity: float = 1.0
 
     # Optional dark outline drawn around each donor/acceptor sprite's
     # silhouette, so flat-colored shapes pop more against the background

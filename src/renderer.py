@@ -149,10 +149,15 @@ class Renderer:
         Unlike a multiply blend, this never crushes dark strokes toward
         black -- the darkest pixels land on a muted version of the tint
         instead, so the recolored art still reads as a single hue.
+
+        Blended with the original pixel by sprite_tint_opacity, so at less
+        than full opacity the source art's own dark outline/linework still
+        shows through instead of being fully replaced by the tint gradient.
         """
         tint = tuple(tint)
         shadow = tuple(int(c * 0.72) for c in tint)
         highlight = tuple(min(255, int(255 * 0.22 + c * 0.78)) for c in tint)
+        opacity = max(0.0, min(1.0, self.gfx.sprite_tint_opacity))
         out = sprite.copy()
         w, h = out.get_size()
         for y in range(h):
@@ -161,9 +166,16 @@ class Renderer:
                 if a == 0:
                     continue
                 lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0
-                new_color = tuple(
+                duo = tuple(
                     int(shadow[i] + (highlight[i] - shadow[i]) * lum) for i in range(3)
                 )
+                if opacity < 1.0:
+                    orig = (r, g, b)
+                    new_color = tuple(
+                        int(duo[i] * opacity + orig[i] * (1 - opacity)) for i in range(3)
+                    )
+                else:
+                    new_color = duo
                 out.set_at((x, y), new_color + (a,))
         return out
 
