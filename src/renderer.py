@@ -622,16 +622,6 @@ class Renderer:
         self.screen.blit(title, (panel_x + margin, y))
         y += 30
 
-        # Clickable bond-animation toggle (also bound to the 'A' key)
-        on = state.show_bond_animations
-        btn_rect = pygame.Rect(panel_x + margin, y, panel_w - 2 * margin, 24)
-        pygame.draw.rect(self.screen, (40, 120, 70) if on else (90, 45, 45), btn_rect, border_radius=4)
-        pygame.draw.rect(self.screen, (200, 200, 200), btn_rect, 1, border_radius=4)
-        btn_label = self.font.render(f"Animations: {'ON' if on else 'OFF'}", True, self.TEXT_COLOR)
-        self.screen.blit(btn_label, btn_label.get_rect(center=btn_rect.center))
-        self._anim_toggle_rect = btn_rect
-        y += btn_rect.height + 14
-
         # Block color gradient (matches block_color_by)
         color_by = self.gfx.block_color_by
         info = COLOR_BY_INFO.get(color_by, (color_by, "0.0", "1.0"))
@@ -702,6 +692,18 @@ class Renderer:
         pygame.draw.circle(self.screen, cat_color, (icon_cx, y + 8), 12, 1)
         _blit_label("Catalytic", y)
         y += 25
+
+        # Clickable toggle (also bound to the 'A' key), placed directly
+        # above the bond-formed/broken symbols it controls.
+        on = state.show_bond_animations
+        btn_rect = pygame.Rect(panel_x + margin, y, panel_w - 2 * margin, 24)
+        pygame.draw.rect(self.screen, (40, 120, 70) if on else (90, 45, 45), btn_rect, border_radius=4)
+        pygame.draw.rect(self.screen, (200, 200, 200), btn_rect, 1, border_radius=4)
+        btn_label = self.small_font.render(
+            f"Formation/Breakage: {'ON' if on else 'OFF'}", True, self.TEXT_COLOR)
+        self.screen.blit(btn_label, btn_label.get_rect(center=btn_rect.center))
+        self._anim_toggle_rect = btn_rect
+        y += btn_rect.height + 8
 
         # Bond-formed / bond-broken swatches (bigger thumbnail -- detailed
         # art reads poorly at ~20px regardless of scaling source/quality).
@@ -889,7 +891,7 @@ class Renderer:
             "UP/DN: speed +/-",
             "R: reset",
             "D: debug overlay",
-            "A: toggle animations",
+            "A: toggle bond formation/breakage",
             "ESC: quit",
         ]
         for line in controls:
