@@ -1,1 +1,2 @@
 pygame>=2.5.0
+pygame-menu>=4.5.0

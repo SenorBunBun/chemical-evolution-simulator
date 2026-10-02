@@ -5,6 +5,7 @@ Usage:
     python main.py configs/scenarios/two_molecules.json     # Scenario (overrides sim config)
     python main.py --gfx configs/graphics_default.json      # Custom graphics
     python main.py configs/simulation_default.json --verbose
+    python main.py --no-settings                            # Skip the pre-game settings screen
 """
 from __future__ import annotations
 
@@ -25,6 +26,7 @@ def main():
     gfx_path = None
     verbose = False
     headless = False
+    show_settings = True
     args = sys.argv[1:]
     i = 0
     while i < len(args):
@@ -32,6 +34,8 @@ def main():
             verbose = True
         elif args[i] == "--headless":
             headless = True
+        elif args[i] == "--no-settings":
+            show_settings = False
         elif args[i] == "--gfx" and i + 1 < len(args):
             i += 1
             gfx_path = args[i]
@@ -70,6 +74,11 @@ def main():
     from src.id_gen import IdGen
     from src.physics import SpatialHash
     from src.renderer import Renderer
+
+    if show_settings:
+        pygame.init()
+        from src.settings_menu import show_settings_menu
+        sim_config, gfx_config = show_settings_menu(sim_config, gfx_config)
 
     id_gen = IdGen()
     state = create_initial_state(sim_config, gfx_config, id_gen)
