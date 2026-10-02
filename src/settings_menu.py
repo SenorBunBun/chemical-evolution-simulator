@@ -1,8 +1,8 @@
 """Pre-game / mid-game settings screen built with pygame_menu.
 
-Lets a user tweak a curated set of simulation/graphics parameters,
-styled to match the main app (water background, legend's font, rounded
-"bubble" widgets) instead of looking like a separate generic menu.
+Lets a user type in a curated set of simulation parameters, styled to
+match the main app (water background, legend's font, rounded "bubble"
+widgets) instead of looking like a separate generic menu.
 """
 from __future__ import annotations
 
@@ -11,29 +11,62 @@ from dataclasses import replace
 
 import pygame
 import pygame_menu
-from pygame_menu.locals import ALIGN_LEFT
+from pygame_menu.locals import ALIGN_CENTER, ALIGN_LEFT, INPUT_FLOAT, INPUT_INT
 
 from src.config import GfxConfig, SimConfig
 
 # Same font stack used for the legend, so the settings screen matches.
 _FONT_STACK = "avenirnext,avenir,segoeui,trebuchetms,verdana,tahoma,arial"
 
-# Left edge every widget aligns against (a vertical "bar" is drawn here).
-_LEFT_X = 40
+# Left edge each field's text aligns against -- shifted in from the true
+# window edge so the whole block of fields reads as roughly centered on
+# screen rather than hugging the left margin.
+_LEFT_X = 320
 
-# "Bubble" look shared by every widget: soft rounded, translucent white
-# panel with a light border, reads as a playful water-themed pill/bubble.
-# Kept modest (small padding/border) so widgets don't visually touch/
-# overlap their neighbors even with theme.widget_margin spacing them out.
-_BUBBLE_STYLE = dict(
-    background_color=(255, 255, 255, 170),
-    border_color=(255, 255, 255),
-    border_width=1,
-    border_radius=14,
-    padding=(4, 10),
+# Fields just get padding (room for the rounded bubble drawn separately
+# below) -- background_color/border_radius on the widget itself don't
+# actually render rounded corners in this pygame_menu version.
+_FIELD_STYLE = dict(
+    padding=(6, 14),
     align=ALIGN_LEFT,
     margin=(_LEFT_X, 18),
 )
+
+
+def _add_rounded_bubble(widget, color=(255, 255, 255, 180), radius=20, inflate=(4, 4)):
+    """Draw an actual rounded rect behind a widget.
+
+    pygame_menu's own background_color/border_radius kwargs don't render
+    rounded corners in this version -- this draws one manually with
+    pygame.draw.rect's native border_radius support instead.
+    """
+    def _draw(surface, wid):
+        rect = wid.get_rect(inflate=inflate, to_absolute_position=True)
+        pygame.draw.rect(surface, color, rect, border_radius=radius)
+    widget.get_decorator().add_callable(_draw, prev=True)
+
+
+def _make_numeric_field(menu, label, key, values, value_range, input_type, decimals=None):
+    """A labeled text field that types a number, clamped to value_range."""
+    lo, hi = value_range
+    menu.add.label(
+        f"{label} ({lo}-{hi})", font_size=16, font_color=(255, 255, 255),
+        align=ALIGN_LEFT, margin=(_LEFT_X, 2),
+    )
+
+    def _on_change(v):
+        try:
+            num = float(v)
+        except (TypeError, ValueError):
+            return
+        num = max(lo, min(hi, num))
+        values[key] = int(num) if input_type == INPUT_INT else round(num, decimals or 2)
+
+    field = menu.add.text_input(
+        "", default=str(values[key]), input_type=input_type,
+        onchange=_on_change, onreturn=_on_change, **_FIELD_STYLE,
+    )
+    _add_rounded_bubble(field)
 
 
 def show_settings_menu(sim_config: SimConfig, gfx_config: GfxConfig) -> tuple[SimConfig, GfxConfig, bool]:
@@ -58,11 +91,7 @@ def show_settings_menu(sim_config: SimConfig, gfx_config: GfxConfig) -> tuple[Si
     theme.title_font_color = (255, 255, 255)
     theme.widget_font_color = (20, 30, 40)
     theme.selection_color = (255, 210, 80)
-    # Vertical gap between widgets -- without this they render touching
-    # edge-to-edge, which both looks stacked and makes clicks land on the
-    # wrong (overlapping) widget.
     theme.widget_margin = (0, 18)
-    theme.widget_alignment = ALIGN_LEFT
 
     water_bg = "assets/waterDrawing.png"
     if os.path.exists(water_bg):
@@ -78,88 +107,37 @@ def show_settings_menu(sim_config: SimConfig, gfx_config: GfxConfig) -> tuple[Si
         theme=theme,
     )
 
-    # Vertical accent bar that every widget's left edge lines up against.
-    # Decorator coordinates are relative to the menu's center, not its
-    # top-left corner -- offset accordingly so the bar lands at _LEFT_X.
-    bar_x = _LEFT_X - gfx_config.window_width / 2
-    bar_y1 = -gfx_config.window_height / 2
-    bar_y2 = gfx_config.window_height / 2
-    menu.get_decorator().add_vline(bar_x, bar_y1, bar_y2, (255, 255, 255, 140), width=2)
-
     applied = {"value": False}
     values = {
         "num_blocks": sim_config.num_blocks,
         "speed_scale": sim_config.speed_scale,
         "formation_reactivity_mean": sim_config.formation_reactivity_mean,
         "breaking_reactivity_mean": sim_config.breaking_reactivity_mean,
-        "block_radius": gfx_config.block_radius,
-        "use_illustrated_blocks": gfx_config.use_illustrated_blocks,
-        "bg_color": tuple(gfx_config.bg_color),
-        "sprite_tint_opacity": gfx_config.sprite_tint_opacity,
-        "animated_molecule_min_n": gfx_config.animated_molecule_min_n,
     }
 
-    menu.add.label("Simulation", font_size=20, font_color=(255, 255, 255), margin=(_LEFT_X, 10))
-    menu.add.range_slider(
-        "Num Blocks", values["num_blocks"], (50, 2000), 10,
-        onchange=lambda v: values.update(num_blocks=int(v)), **_BUBBLE_STYLE,
-    )
-    menu.add.range_slider(
-        "Speed Scale", values["speed_scale"], (0.5, 5.0), 0.1,
-        onchange=lambda v: values.update(speed_scale=round(v, 2)), **_BUBBLE_STYLE,
-    )
-    menu.add.range_slider(
-        "Formation Reactivity", values["formation_reactivity_mean"], (0.0, 1.0), 0.05,
-        onchange=lambda v: values.update(formation_reactivity_mean=round(v, 2)), **_BUBBLE_STYLE,
-    )
-    menu.add.range_slider(
-        "Breaking Reactivity", values["breaking_reactivity_mean"], (0.0, 1.0), 0.05,
-        onchange=lambda v: values.update(breaking_reactivity_mean=round(v, 2)), **_BUBBLE_STYLE,
-    )
-
-    menu.add.label("Graphics", font_size=20, font_color=(255, 255, 255), margin=(_LEFT_X, 10))
-    menu.add.range_slider(
-        "Block Radius", values["block_radius"], (4, 20), 1,
-        onchange=lambda v: values.update(block_radius=float(v)), **_BUBBLE_STYLE,
-    )
-    menu.add.toggle_switch(
-        "Illustrated Blocks", values["use_illustrated_blocks"],
-        onchange=lambda v: values.update(use_illustrated_blocks=bool(v)), **_BUBBLE_STYLE,
-    )
-    menu.add.color_input(
-        "Background Color", color_type="rgb", default=values["bg_color"],
-        onchange=lambda v: values.update(bg_color=v), **_BUBBLE_STYLE,
-    )
-    menu.add.range_slider(
-        "Tint Opacity", values["sprite_tint_opacity"], (0.0, 1.0), 0.05,
-        onchange=lambda v: values.update(sprite_tint_opacity=round(v, 2)), **_BUBBLE_STYLE,
-    )
-    menu.add.range_slider(
-        "Min Animated Size (n)", values["animated_molecule_min_n"], (0, 30), 1,
-        onchange=lambda v: values.update(animated_molecule_min_n=int(v)), **_BUBBLE_STYLE,
-    )
+    _make_numeric_field(menu, "Num Blocks", "num_blocks", values, (50, 2000), INPUT_INT)
+    _make_numeric_field(menu, "Speed Scale", "speed_scale", values, (0.5, 5.0), INPUT_FLOAT)
+    _make_numeric_field(menu, "Formation Reactivity", "formation_reactivity_mean", values, (0.0, 1.0), INPUT_FLOAT)
+    _make_numeric_field(menu, "Breaking Reactivity", "breaking_reactivity_mean", values, (0.0, 1.0), INPUT_FLOAT)
 
     def _apply():
         applied["value"] = True
         menu.disable()
 
-    menu.add.vertical_margin(20)
+    menu.add.vertical_margin(24)
     apply_btn = menu.add.button(
-        "Apply & Restart", _apply, align=ALIGN_LEFT, margin=(_LEFT_X, 18),
-        font_color=(20, 50, 20), border_radius=22, accept_kwargs=True,
+        "Apply & Restart", _apply, align=ALIGN_CENTER,
+        font_color=(20, 50, 20), padding=(10, 26),
     )
-    apply_btn.set_background_color((90, 200, 120, 220))
-    apply_btn.set_border(width=2, color=(255, 255, 255), inflate=(10, 10))
-    apply_btn.set_padding((10, 26))
+    _add_rounded_bubble(apply_btn, color=(90, 200, 120, 230), radius=22, inflate=(6, 6))
 
     cancel_btn = menu.add.button(
-        "Cancel", pygame_menu.events.CLOSE, align=ALIGN_LEFT, margin=(_LEFT_X, 18),
-        font_color=(40, 40, 40), border_radius=22, accept_kwargs=True,
+        "Cancel", pygame_menu.events.CLOSE, align=ALIGN_CENTER,
+        font_color=(40, 40, 40), padding=(8, 22),
     )
-    cancel_btn.set_background_color((220, 220, 220, 180))
-    cancel_btn.set_border(width=2, color=(255, 255, 255), inflate=(10, 10))
-    cancel_btn.set_padding((8, 22))
+    _add_rounded_bubble(cancel_btn, color=(225, 225, 225, 210), radius=22, inflate=(6, 6))
 
+    menu.center_content()
     menu.mainloop(screen)
 
     if not applied["value"]:
@@ -172,13 +150,5 @@ def show_settings_menu(sim_config: SimConfig, gfx_config: GfxConfig) -> tuple[Si
         formation_reactivity_mean=values["formation_reactivity_mean"],
         breaking_reactivity_mean=values["breaking_reactivity_mean"],
     )
-    new_gfx = replace(
-        gfx_config,
-        block_radius=values["block_radius"],
-        use_illustrated_blocks=values["use_illustrated_blocks"],
-        bg_color=list(values["bg_color"]),
-        sprite_tint_opacity=values["sprite_tint_opacity"],
-        animated_molecule_min_n=values["animated_molecule_min_n"],
-    )
-    return new_sim, new_gfx, True
+    return new_sim, gfx_config, True
 
