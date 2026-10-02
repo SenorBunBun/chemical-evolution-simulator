@@ -5,7 +5,9 @@ Usage:
     python main.py configs/scenarios/two_molecules.json     # Scenario (overrides sim config)
     python main.py --gfx configs/graphics_default.json      # Custom graphics
     python main.py configs/simulation_default.json --verbose
-    python main.py --no-settings                            # Skip the pre-game settings screen
+
+In-game, click "Edit Parameters / Restart" (top of the legend) to open the
+settings screen and restart the sim with new values.
 """
 from __future__ import annotations
 
@@ -26,7 +28,6 @@ def main():
     gfx_path = None
     verbose = False
     headless = False
-    show_settings = True
     args = sys.argv[1:]
     i = 0
     while i < len(args):
@@ -34,8 +35,6 @@ def main():
             verbose = True
         elif args[i] == "--headless":
             headless = True
-        elif args[i] == "--no-settings":
-            show_settings = False
         elif args[i] == "--gfx" and i + 1 < len(args):
             i += 1
             gfx_path = args[i]
@@ -75,11 +74,6 @@ def main():
     from src.physics import SpatialHash
     from src.renderer import Renderer
 
-    if show_settings:
-        pygame.init()
-        from src.settings_menu import show_settings_menu
-        sim_config, gfx_config = show_settings_menu(sim_config, gfx_config)
-
     id_gen = IdGen()
     state = create_initial_state(sim_config, gfx_config, id_gen)
     renderer = Renderer(sim_config, gfx_config)
@@ -102,6 +96,22 @@ def main():
             state = create_initial_state(sim_config, gfx_config, id_gen)
             spatial_hash = SpatialHash(gfx_config.bond_length)
             print("Simulation reset")
+            continue
+
+        if getattr(state, "_settings_requested", False):
+            from src.settings_menu import show_settings_menu
+            new_sim, new_gfx, applied = show_settings_menu(sim_config, gfx_config)
+            if applied:
+                sim_config, gfx_config = new_sim, new_gfx
+                id_gen = IdGen()
+                state = create_initial_state(sim_config, gfx_config, id_gen)
+                renderer = Renderer(sim_config, gfx_config)
+                spatial_hash = SpatialHash(gfx_config.bond_length)
+                print("Simulation restarted with new settings")
+            else:
+                state._settings_requested = False
+                pygame.display.set_mode((gfx_config.window_width, gfx_config.window_height))
+                pygame.display.set_caption("Molecular Evolution Simulator")
             continue
 
         if not state.paused or renderer.should_step:

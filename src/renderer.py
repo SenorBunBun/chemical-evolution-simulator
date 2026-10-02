@@ -117,6 +117,7 @@ class Renderer:
         self._hbond_mask_cache: dict[tuple, pygame.mask.Mask | None] = {}
         self._hbond_glow_dot_cache: dict[int, pygame.Surface] = {}
         self._anim_toggle_rect: pygame.Rect | None = None
+        self._settings_btn_rect: pygame.Rect | None = None
         self.debug_mode = False
         self._stepping = False
 
@@ -304,6 +305,8 @@ class Renderer:
                 if self._anim_toggle_rect and self._anim_toggle_rect.collidepoint(event.pos):
                     state.show_bond_animations = not state.show_bond_animations
                     print(f"Bond animations: {'ON' if state.show_bond_animations else 'OFF'}")
+                elif self._settings_btn_rect and self._settings_btn_rect.collidepoint(event.pos):
+                    state._settings_requested = True
                 elif state.paused and self.debug_mode:
                     self._inspect_click(state, event.pos)
 
@@ -628,7 +631,17 @@ class Renderer:
 
         title = self.title_font.render("LEGEND", True, self.TEXT_COLOR)
         self.screen.blit(title, (panel_x + (panel_w - title.get_width()) // 2, y))
-        y += 42
+        y += 36
+
+        # Clickable button to open the settings screen mid-game (also
+        # triggers a restart once the user applies changes there).
+        btn_rect = pygame.Rect(panel_x + margin, y, panel_w - 2 * margin, 26)
+        pygame.draw.rect(self.screen, (50, 90, 130), btn_rect, border_radius=6)
+        pygame.draw.rect(self.screen, (200, 200, 200), btn_rect, 1, border_radius=6)
+        btn_label = self.small_font.render("Edit Parameters / Restart", True, (255, 255, 255))
+        self.screen.blit(btn_label, btn_label.get_rect(center=btn_rect.center))
+        self._settings_btn_rect = btn_rect
+        y += btn_rect.height + 16
 
         # Block color gradient (matches block_color_by)
         color_by = self.gfx.block_color_by
