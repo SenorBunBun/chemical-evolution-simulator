@@ -638,7 +638,7 @@ class Renderer:
         btn_rect = pygame.Rect(panel_x + margin, y, panel_w - 2 * margin, 26)
         pygame.draw.rect(self.screen, (50, 90, 130), btn_rect, border_radius=6)
         pygame.draw.rect(self.screen, (200, 200, 200), btn_rect, 1, border_radius=6)
-        btn_label = self.small_font.render("Edit Parameters / Restart", True, (255, 255, 255))
+        btn_label = self.small_font.render("Edit Parameters", True, (255, 255, 255))
         self.screen.blit(btn_label, btn_label.get_rect(center=btn_rect.center))
         self._settings_btn_rect = btn_rect
         y += btn_rect.height + 16
